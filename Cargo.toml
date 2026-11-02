@@ -1,0 +1,20 @@
+[package]
+name = "plotter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rusqlite = { version = "0.29", features = ["bundled"] }
+image = { version = "0.24", default-features = false, features = ["png","jpeg"] }
+lru = "0.10"
+anyhow = "1.0"
+sdl2 = { version = "0.38.0", features = ["ttf", "gfx", "unsafe_textures"] }
+tungstenite = { version = "0.24", features = ["url"] }
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+futures-util = "0.3"
+url = "2.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4.45"
+
