@@ -18,6 +18,7 @@ mod gps;
 mod boat;
 mod track;
 mod state;
+mod ais;
 
 use mbtiles_renderer::MBTilesRenderer;
 use crate::state::State;
@@ -121,8 +122,11 @@ async fn main() ->Result<(), Box<dyn std::error::Error>> {
 
     // Channels de communication avec la tache signalk (donnees pures, pas de SDL).
     let (state_tx, mut state_rx)   = watch::channel(BoatState::default());
+    let (ais_tx, mut ais_rx) = watch::channel(Vec::<ais::AisTarget>::new());
     let (status_tx, mut status_rx) = watch::channel(String::new());
-    tokio::spawn(signalk::signalk_task(state_tx, status_tx));
+    tokio::spawn(signalk::signalk_task(state_tx, ais_tx, status_tx));
+    let mut ais_targets = Vec::new();
+    let mut last_ais_cleanup = Instant::now();
 
     // Initialisation des variables
     
@@ -149,6 +153,23 @@ async fn main() ->Result<(), Box<dyn std::error::Error>> {
 		println!("status : {}",&msg);
                 let _ = map.info(&msg);
             }
+        }
+
+        if ais_rx.has_changed().unwrap_or(false) {
+            ais_targets = ais_rx.borrow_and_update().clone();
+            dirty = true;
+        }
+
+        if !ais_targets.is_empty()
+            && last_ais_cleanup.elapsed() >= Duration::from_secs(1)
+        {
+            let previous_count = ais_targets.len();
+            let now = Instant::now();
+            ais_targets.retain(|target| target.is_fresh(now));
+            if ais_targets.len() != previous_count {
+                dirty = true;
+            }
+            last_ais_cleanup = now;
         }
 
         // Recupere le dernier etat du  bateau connu (non bloquant).
@@ -711,6 +732,7 @@ async fn main() ->Result<(), Box<dyn std::error::Error>> {
 ///////////////////// Affichage du bateau  ////////////////////////////////////
 	    
 	    boat.show( &renderer, &mut map);
+	    ais::show_targets(&ais_targets, &renderer, &mut map)?;
 
 ////////////////// Affichage de la route  soit en mode normal ou mode nav /////////////////////////////////////////////////////
 	    

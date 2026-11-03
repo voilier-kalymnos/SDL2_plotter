@@ -26,6 +26,7 @@ const BOAT_COLOR     : Color = gfx_color(0, 0, 255, 255);
 const MESURE_COLOR   : Color = gfx_color(0, 0, 255, 255);
 const ROUTE_COLOR    : Color = gfx_color(255, 0, 0, 255);
 const COG_COLOR      : Color = gfx_color(0, 0, 255, 255);
+const AIS_COLOR      : Color = Color::RGB(255, 140, 0);
 const BACKGROUND_MAP : Color = gfx_color(250, 250, 250, 255);
 
 pub struct MoteurSdl {
@@ -166,6 +167,29 @@ impl<'ttf> Map<'ttf> {
         Ok(())
         }
 
+    pub fn show_ais_target(
+        &mut self,
+        x: i32,
+        y: i32,
+        course_over_ground: Option<f64>,
+    ) -> Result<(), String> {
+        if let Some(course) = course_over_ground.filter(|course| course.is_finite()) {
+            let end_x = x + (course.sin() * 28.0).round() as i32;
+            let end_y = y - (course.cos() * 28.0).round() as i32;
+            let _ = self.canvas.thick_line(
+                x as i16,
+                y as i16,
+                end_x as i16,
+                end_y as i16,
+                3,
+                AIS_COLOR,
+            );
+        }
+        self.canvas.filled_circle(x as i16, y as i16, 7, AIS_COLOR)?;
+        self.canvas.circle(x as i16, y as i16, 9, Color::BLACK)?;
+        Ok(())
+    }
+
     pub fn show_mark(&mut self,x:i16,y:i16) -> Result<(), String> {
 
         self.canvas.filled_circle( x, y, MARK_SIZE, MESURE_COLOR)?;
@@ -248,4 +272,3 @@ const fn gfx_color(r: u8, g: u8, b: u8, a: u8) -> Color {
         Color::RGBA(a, b, g, r) 
         }
     
-
