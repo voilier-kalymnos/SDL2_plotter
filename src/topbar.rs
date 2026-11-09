@@ -24,7 +24,8 @@ pub const NEXT: &str        = "Next Wp";
 pub const QUITTE: &str      = "Exit";
 pub const CLEAR_TRACK: &str = "New Track";
 pub const SAVE_TRACK: &str  = "Save";
-
+pub const CLEAR_WP: &str    = "New Waypoint";
+pub const SAVE_WP: &str     = "Save Waypoint";
 
 const FONT_FILE: &str = "assets/Montserrat-Regular.ttf";
 const FONT_SIZE: u16 = 16;
@@ -78,6 +79,12 @@ impl<'ttf> Topbar<'ttf> {
                 entries: vec![
                     CLEAR_TRACK.into(),
                     SAVE_TRACK.into(),
+                    ] },
+            Menu {
+                title: "Waypoint",
+                entries: vec![
+                    CLEAR_WP.into(),
+                    SAVE_WP.into(),
                     ] },
             ];
 

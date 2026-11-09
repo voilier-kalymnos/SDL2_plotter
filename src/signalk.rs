@@ -201,6 +201,7 @@ impl SignalKClient {
     /// interpretes les messages updates
     fn decode_updates (&mut self, v: Value) -> Result<String, Box<dyn std::error::Error>> {
         if let Some(updates) = v["updates"].as_array() {
+            let mut self_position_updated = false;
             for update in updates {
                 if let Some(values) = update["values"].as_array() {
                     let context = update["context"]
@@ -213,8 +214,19 @@ impl SignalKClient {
                             if is_self_context(context, self.self_context.as_deref()) {
                                 match path {
                                     POSITION_PATH => {
-                                        self.data.latitude = val["latitude"].as_f64().unwrap_or(self.data.latitude);
-                                        self.data.longitude = val["longitude"].as_f64().unwrap_or(self.data.longitude);
+                                        if let (Some(latitude), Some(longitude)) =
+                                            (val["latitude"].as_f64(), val["longitude"].as_f64())
+                                        {
+                                            if latitude.is_finite()
+                                                && longitude.is_finite()
+                                                && (-90.0..=90.0).contains(&latitude)
+                                                && (-180.0..=180.0).contains(&longitude)
+                                            {
+                                                self.data.latitude = latitude;
+                                                self.data.longitude = longitude;
+                                                self_position_updated = true;
+                                            }
+                                        }
                                     }
                                     COG_PATH => self.data.cog = val.as_f64().unwrap_or(self.data.cog),
                                     SOG_PATH => self.data.sog = val.as_f64().unwrap_or(self.data.sog),
@@ -227,7 +239,11 @@ impl SignalKClient {
                     }
                 }
             }
-            return Ok("updates".to_string());
+            return Ok(if self_position_updated {
+                "position".to_string()
+            } else {
+                "updates".to_string()
+            });
         }
         println!("other");
         Ok("other".to_string())
@@ -326,6 +342,7 @@ async fn wait_for_signalk_connection(url: &str) -> WsStream {
 // la boucle SDL, ne bloque donc jamais le rendu / les events clavier-souris.
 pub async fn signalk_task(
     state_tx: watch::Sender<BoatState>,
+    track_tx: tokio::sync::mpsc::UnboundedSender<(f64, f64)>,
     ais_tx: watch::Sender<Vec<AisTarget>>,
     status_tx: watch::Sender<String>,
 ) {
@@ -339,7 +356,7 @@ pub async fn signalk_task(
 
         let _ = status_tx.send("Load Map...".to_string());
         // boucle normale de reception des deltas signalk
-        while let Some(_mess) = signalk.next_update().await {
+        while let Some(message) = signalk.next_update().await {
             let state = BoatState {
                 longitude: signalk.data.longitude,
                 latitude: signalk.data.latitude,
@@ -347,6 +364,9 @@ pub async fn signalk_task(
                 speed_over_ground: signalk.data.sog,
                 };
             let _ = state_tx.send(state);
+                if message == "position" {
+                    let _ = track_tx.send((signalk.data.longitude, signalk.data.latitude));
+                }
                 let _ = ais_tx.send(signalk.targets.values().cloned().collect());
         }
 

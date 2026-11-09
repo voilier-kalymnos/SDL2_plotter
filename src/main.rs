@@ -8,29 +8,25 @@
 
 mod mbtiles_renderer;
 mod screen;
+mod state;
 mod signalk;
-mod route;
-mod mesure;
+mod boat;
+mod ais;
 mod topbar;
 mod buttombar;
 mod nav;
+mod route;
+mod mesure;
 mod gps;
-mod boat;
-mod track;
-mod state;
-mod ais;
 
-use mbtiles_renderer::MBTilesRenderer;
-use crate::state::State;
-use std::process;
 use crate::boat::BoatState;
-
-use sdl2::pixels::PixelFormatEnum;
+use mbtiles_renderer::MBTilesRenderer;
 use sdl2::event::Event;
-use sdl2::mouse::MouseButton;
-use sdl2::keyboard::{Keycode, Mod};
-use tokio::sync::watch;
 use std::time::{Duration, Instant};
+use sdl2::pixels::PixelFormatEnum;
+use sdl2::ttf::Sdl2TtfContext;
+use sdl2::keyboard::Mod;
+use tokio::sync::watch;
 use std:: path::Path;
 use chrono::Local;
 
@@ -38,12 +34,24 @@ const MAP_WORLD	:&str			= "assets/OSM.mbtiles";
 const STATE_FILE :&str  		= "state.json"; 
 const DEFAULT_TRACK_DIR: &str	= "track/";
 const DEFAULT_TRACK_PATH: &str	= "track/default.gpx";
-
 const LONG_CLICK: Duration 		= Duration::from_millis(500);
 const MOVE_TOLERANCE: i32 		= 5;
-const TRACK_MINI :f64			= 20.0; // métres
-const TRACK_TOLERANCE :f64		= 20.0;  // métres
-const TRACK_GAP :f64			= 1500.0;    // métres
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+
+	let mut sdl = screen::MoteurSdl::init().map_err(anyhow::Error::msg)?;
+	let mut map = screen::Map::new(&sdl.ttf_context, &sdl.context).map_err(anyhow::Error::msg)?;
+
+	let texture_creator = map.canvas.texture_creator();
+	let mut texture = texture_creator
+		.create_texture_streaming(PixelFormatEnum::RGBA32, map.screen_width, map.screen_height)
+		.map_err(anyhow::Error::msg)?;
+	let pitch = (map.screen_width * 4) as usize;
+
+	let mut plotter = Plotter::new(&sdl.ttf_context, map.screen_width, map.screen_height)?;
+	plotter.main_loop(&mut sdl.event_pump, &mut map, &mut texture, pitch)
+	}
 
 struct Press {
     start: Instant,
@@ -53,803 +61,629 @@ struct Press {
     long_fired: bool,
 }
 
- #[tokio::main]
-async fn main() ->Result<(), Box<dyn std::error::Error>> {
-    
-    let charts_path = list_maps("map");
-    let charts_name: Vec<String> = charts_path
-            .iter()
-            .map(|c| display_name(c).to_string())
-            .collect();
-    
-    let mut state = State::load(STATE_FILE).unwrap_or_else(|_| State 
-	{
-	edit_route : false,
-	edit_wp    : false,
-	mesure     : true,
-	goto       : false,
-	follow     : false,
-	map	   : charts_path[0].clone(),
-	position   : None,
-	zoom       : 0,
-	map_offset : (0,0),
-	});
-	
-    let mut route  				= route::Route::new()?;
-    let mut mesure 				= mesure::Mesure::new()?;
-    let mut boat  			= boat::BoatState::default();
-    let mut screen   		= screen::MoteurSdl::init()?;
-    let mut map      			= screen::Map::new(&screen.ttf_context, &screen.context)?;
-    let mut topbar    		= topbar::Topbar::new(&screen.ttf_context, map.screen_width, charts_name.clone()).expect("failed to build topbar");    
-    let mut buttombar 	= buttombar::Buttombar::new(&screen.ttf_context, map.screen_width,  map.screen_height).expect("failed to build buttombar bar");
-    let mut nav 					= nav::Nav::new();
-    let mut track       			= track::Track::new(
-		TRACK_MINI,
-		TRACK_TOLERANCE,
-		TRACK_GAP,
-		Path::new(DEFAULT_TRACK_PATH)
-	)?;
-    
-    let _ = map.info("Initialise Mbtiles...");
-    let mut renderer	= match MBTilesRenderer::new(
-		&state.map,
-		state.zoom,
-		map.screen_width,
-		map.screen_height,
-		){
-		Ok(r) => r,
-		Err(e) => {
-		    let msg = format!("{e}");
-		    let _ = map.info(&msg);
-		    std::thread::sleep(std::time::Duration::from_secs(4));
-		    process::exit(1);
-		    }
+struct Plotter<'ttf> {
+	renderer: MBTilesRenderer,
+	state: state::State,
+	running: bool,
+	dirty: bool,
+	is_draging: bool,
+	xdrag:i32,
+	ydrag:i32,
+	drag_start: (i32,i32),
+	boat: BoatState,
+	topbar: topbar::Topbar<'ttf>,
+	buttombar: buttombar::Buttombar<'ttf>,
+	nav:nav::Nav,
+	route:route::Route,
+	mesure:mesure::Mesure,
+	charts_path: Vec<String>,
+	charts_name: Vec<String>,
+	press: Option<Press>,
+	selected: Option<usize>,
+
+	state_rx: watch::Receiver<BoatState>,
+    track_rx: tokio::sync::mpsc::UnboundedReceiver<(f64, f64)>,
+    ais_rx: watch::Receiver<Vec<ais::AisTarget>>,
+    status_rx: watch::Receiver<String>,
+}
+
+impl<'ttf> Plotter<'ttf> {
+
+	fn new(ttf_context: &'ttf Sdl2TtfContext, width: u32, height: u32) -> anyhow::Result<Self> {
+		let boat = BoatState::default();
+		let (state_tx, state_rx) = watch::channel(boat);
+		let (track_tx, track_rx) = tokio::sync::mpsc::unbounded_channel();
+		let (ais_tx, ais_rx) = watch::channel(Vec::new());
+		let (status_tx, status_rx) = watch::channel(String::new());
+		tokio::spawn(signalk::signalk_task(state_tx, track_tx, ais_tx, status_tx,));
+
+		let charts_path = state::list_maps("map");
+		let charts_name: Vec<String> = charts_path
+			.iter()
+			.map(|path| {
+				std::path::Path::new(path)
+					.file_stem()
+					.and_then(|name| name.to_str())
+					.unwrap_or(path)
+					.to_string()
+			})
+			.collect();
+		let initial_map = charts_path
+			.first()
+			.cloned()
+			.unwrap_or_else(|| MAP_WORLD.to_string());
+		let state = state::State::new(STATE_FILE, initial_map)
+			.map_err(anyhow::Error::msg)?;
+		let renderer = MBTilesRenderer::new(
+			&state.map.clone(), 
+			state.zoom, 
+			width, 
+			height)?;
+		
+		let topbar = topbar::Topbar::new(ttf_context, width, charts_name.clone())
+			.map_err(anyhow::Error::msg)?;
+		let buttombar 	= buttombar::Buttombar::new(ttf_context, width, height)
+			.expect("failed to build buttombar bar");
+		let nav 		= nav::Nav::new();
+		let route  	= route::Route::new().map_err(anyhow::Error::msg)?;
+		let mesure 	= mesure::Mesure::new().map_err(anyhow::Error::msg)?;
+
+		Ok(Self { 	renderer, 
+					state, running: true, 
+					dirty: true, 
+					is_draging: false, 
+					xdrag: 0,
+					ydrag: 0,
+					drag_start: (0,0),
+					boat, 
+					topbar, 
+					buttombar,
+					nav,
+					route,
+					mesure,
+					charts_path, 
+					charts_name, 
+					press: None, 
+					selected: None,
+					state_rx, 
+					track_rx, 
+					ais_rx, 
+					status_rx })
+	}
+
+	fn main_loop(
+			&mut self,
+			event_pump: &mut sdl2::EventPump,
+			map: &mut screen::Map<'_>,
+			texture: &mut sdl2::render::Texture,
+			pitch: usize,
+		) -> anyhow::Result<()> {
+		while self.running {
+
+			/////////////////////   Event /////////////////////////
+			for event in event_pump.poll_iter() {
+				self.match_event(event, map, texture)
+					.map_err(anyhow::Error::msg)?;
+				}
+
+			//////////////////////   Position  /////////////////////////
+			if self.state_rx.has_changed()? {
+				let boat = *self.state_rx.borrow_and_update();
+				self.boat = boat;
+
+				if self.state.follow {
+					self.state.position = Some((boat.longitude, boat.latitude));
+					}
+    			self.dirty = true;
+				}
+			
+			self.long_click();
+
+			//////////////////////   Display /////////////////////////
+			if self.dirty && !self.is_draging {
+				self.display(map, texture, pitch).map_err(anyhow::Error::msg)?;
+				self.dirty = false;
+				}
+			
+			/////// Sleep to limit CPU usage /////////////////////////
+			std::thread::sleep(Duration::from_millis(16));
+			} // end while self.running
+
+			//match self.track.save(Path::new(DEFAULT_TRACK_PATH)) {
+			//			Ok(()) => 	{
+			//						println!("Trace sauvegardée");
+			//						},
+			//			Err(e) => eprintln!("Erreur sauvegarde : {e}"),
+			//			}
+			let _ = self.state.save(STATE_FILE);
+			Ok(())
+			}
+
+	fn display(&mut self, map: &mut screen::Map<'_>, texture: &mut sdl2::render::Texture, pitch: usize) -> anyhow::Result<()> {
+		
+		////////////////// Map display ///////////////////////
+		if self.state.position == None{
+			self.state.position = Some(self.renderer.tiles_center().ok_or(anyhow::anyhow!("no tiles center!!!"))?);
+			}
+		let (lon, lat) = self.state.position.ok_or(anyhow::anyhow!("position de la carte inconnue"))?;
+		let pixels = self.renderer.get_raw_rgba(lon, lat, (0, 0));
+		texture
+			.update(None, &pixels, pitch)
+			.map_err(|error| anyhow::anyhow!(error))?;
+		map.show_map(texture).map_err(anyhow::Error::msg)?;
+
+		//////////////// Mesure display   ////////////  
+	    if self.state.mesure{
+	        self.mesure.show(&self.renderer, map);
+	    	}
+		
+		////////////////// Route display /////////////////
+		self.display_route(map);
+
+		////////// Affichage du bateau  ////////////////////////////////////
+	    self.boat.show( &self.renderer, map);
+
+		/////////////// Topbar display ///////////////////////
+		self.topbar.show(&mut map.canvas);
+
+		/////////////// Buttombar display ////////////////////
+		self.display_buttombar(map);
+
+		map.night_layer(0).map_err(anyhow::Error::msg)?;
+
+		/////////////// preload tiles on the edge ////////////////////////////É	²
+		self.renderer.prefetch_step(8);
+		Ok(())
+		}
+
+	fn display_buttombar(&mut self, map: &mut screen::Map<'_>){
+		
+		let message_left = 
+			if self.state.goto{
+				let (dist_wp, bearing_wp, dist_total) = self.route.calc_route_mn_from_boat(self.nav.get_id(), self.boat.position());
+				format!("From Boat to Next Waypoint :  {:.1} Mn   {:.0}° / DTD : {:.1} Mn",dist_wp, bearing_wp, dist_total)
+				} 
+			else 
+				{
+				self.route.show_route_len()
+				};
+		
+		let mut message_right =
+			if self.state.edit_route{
+				"Mode Edit Route".to_string()
+				}
+			else if self.state.edit_wp{
+				"Mode Edit Waypoint".to_string()
+				}
+			else if self.state.mesure{
+				"Mode Mesure".to_string()
+				}
+			else{
+				"No Mode".to_string()
+				};
+
+		message_right += 
+			if self.state.follow{
+				" / Follow"
+				}
+			else{
+				""
+				};
+	    self.buttombar.show(&mut map.canvas,&message_left, &message_right);
+		}
+
+	fn display_route(&mut self,  map: &mut screen::Map<'_>){
+ 		if self.state.goto{
+			self.route.show_route_from_boat(&self.renderer, map, self.state.edit_route,self.nav.get_id(), self.boat.position());
+			}
+	    else{
+			self.route.show_route_since_id(&self.renderer, map, self.state.edit_route, 0);
+			}
+		}
+
+	fn handle_move_map(
+		&mut self,
+		x: i32,
+		y: i32,
+		xrel: i32,
+		yrel: i32,
+		map: &mut screen::Map<'_>,
+		texture: &sdl2::render::Texture,
+	) -> Result<(), String> {
+		if let Some(p) = self.press.as_mut(){ 
+			if !p.moved {
+				let (dx, dy) = (x - p.x, y - p.y);
+				if dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE {   // demarrage du drag
+					println!("Start drag map");
+					p.moved = true;
+					self.is_draging = true;
+					self.drag_start = (x, y);
+					self.xdrag = 0;
+					self.ydrag = 0;
+					//map.cursor_hand.set();
+					}
+				}
+			if p.moved && self.is_draging {
+				//println!("Drag map");
+				self.xdrag += xrel;
+				self.ydrag += yrel;
+				map.drag_map(texture, self.xdrag, self.ydrag)?;
+				}
+			}
+		Ok(())
+		}
+
+	fn handle_click_mesure(&mut self,map: &mut screen::Map<'_>,x :i32, y: i32){
+
+			println!("Mesure click");
+			let dx = map.screen_width as i32 / 2 - x;
+			let dy = map.screen_height as i32 / 2 - y;
+			self.mesure.add_mark(&self.renderer,dx,dy);
+			self.dirty = true;
+			}
+
+	fn handle_click_edit_route(&mut self,map: &mut screen::Map<'_>,x :i32, y: i32){
+
+			println!("Edit route click");
+			self.selected = self.route.find_point_at(&self.renderer, (x, y), 8);
+			println!("selected {:?}",self.selected);
+			if self.selected == None
+				{
+				if let Some(k) = self.route.find_midpoint_at(&self.renderer, (x, y), 8) // nouveau point entre k et k+1
+					{
+					let (longitude, latitude) = self.route.midpoints()[k];
+					self.route.insert(k, longitude, latitude);     
+					println!("Ajoute un point entre deux wp");
+					}
+				else 	
+					{                      // nouveau point en fin de route
+					let dx = map.screen_width as i32 / 2 - x;
+					let dy = map.screen_height as i32 / 2 - y;
+					let (longitude,latitude) = self.renderer.screen_to_gps(dx, dy);
+					self.route.add(longitude,latitude);
+					println!("Ajoute un point à la fin");
+					//println!("route {route:?}");
+					}
+				}
+		self.route.save();
+		self.dirty = true;
+			}
+
+	fn handle_click_edit_wp(&mut self,map: &mut screen::Map<'_>,x :i32, y: i32){
+			println!("Edit waypoint click");
+
+			}
+
+	fn handle_short_click(&mut self, map: &mut screen::Map<'_>, x :i32, y: i32){
+		//println!("Click court en ({}, {})", x, y);
+		if self.state.mesure{
+			self.handle_click_mesure(map, x,y);
+			}
+		else if self.state.edit_route{
+			self.handle_click_edit_route(map, x,y);
+			}
+		else if self.state.edit_wp{
+			self.handle_click_edit_wp(map, x, y);
+			}
+		}
+
+	fn handle_long_click(&mut self, x :i32, y: i32){
+		println!("Click long en ({}, {})", x, y);
+		}
+
+	fn long_click(&mut self) {
+		let click_position = if let Some(p) = self.press.as_mut() {
+			if !p.moved && !p.long_fired && p.start.elapsed() >= LONG_CLICK {
+				p.long_fired = true;
+				Some((p.x, p.y))
+			} else {
+				None
+			}
+		} else {
+			None
 		};
 
-    if state.position == None
-	{
-	state.position = Some(renderer.tiles_center().ok_or("no tiles center!!!")?);
-	}
-    if let Some((lon, lat)) = state.position 
-	{
-	println!("center map longitude : {} / latitude : {}", lon, lat);
-	}
-
-    let texture_creator =  map.canvas.texture_creator();
-    let mut texture =
-        texture_creator.create_texture_streaming(PixelFormatEnum::RGBA32, map.screen_width, map.screen_height)?;
-    let pitch = (map.screen_width * 4) as usize; // 4 octets par pixel (RGBA8)
-
-    // Channels de communication avec la tache signalk (donnees pures, pas de SDL).
-    let (state_tx, mut state_rx)   = watch::channel(BoatState::default());
-    let (ais_tx, mut ais_rx) = watch::channel(Vec::<ais::AisTarget>::new());
-    let (status_tx, mut status_rx) = watch::channel(String::new());
-    tokio::spawn(signalk::signalk_task(state_tx, ais_tx, status_tx));
-    let mut ais_targets = Vec::new();
-    let mut last_ais_cleanup = Instant::now();
-
-    // Initialisation des variables
-    
-    let mut is_dragging = false;
-    let mut dirty 	= false;
-    let mut is_zooming  = false;
-    let mut drag_start 	= (0i32, 0i32);
-    let mut xdrag	= 0;
-    let mut ydrag 	= 0;
-
-
-    let mut press: Option<Press> = None;
-    let mut selected: Option<usize>;
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-    'main: loop {
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-        // Affiche les messages de statut envoyes par la tache signalk
-        // (connexion, souscription, attente position, reconnexion...).
-        if status_rx.has_changed().unwrap_or(false) {
-            let msg = status_rx.borrow_and_update().clone();
-            if !msg.is_empty() {
-		println!("status : {}",&msg);
-                let _ = map.info(&msg);
-            }
-        }
-
-        if ais_rx.has_changed().unwrap_or(false) {
-            ais_targets = ais_rx.borrow_and_update().clone();
-            dirty = true;
-        }
-
-        if !ais_targets.is_empty()
-            && last_ais_cleanup.elapsed() >= Duration::from_secs(1)
-        {
-            let previous_count = ais_targets.len();
-            let now = Instant::now();
-            ais_targets.retain(|target| target.is_fresh(now));
-            if ais_targets.len() != previous_count {
-                dirty = true;
-            }
-            last_ais_cleanup = now;
-        }
-
-        // Recupere le dernier etat du  bateau connu (non bloquant).
-	
-        if state_rx.has_changed().unwrap_or(false) {
-            let data = *state_rx.borrow_and_update();
-	    boat.longitude = data.longitude;
-	    boat.latitude  = data.latitude;
-	    boat.course_over_ground = data.course_over_ground;
-	    boat.speed_over_ground = data.speed_over_ground;
-	    //println!("boatstate longitude : {} / latitude : {} / cos : {} / sog : {}",boat.longitude,boat.latitude,boat.course_over_ground,boat.speed_over_ground,);
-	    dirty = true;
-	    
-            if !is_dragging 
-		{
-		boat.longitude 	   = data.longitude;
-		boat.latitude  	   = data.latitude;
-		boat.show(&renderer, &mut map);
+		if let Some((x, y)) = click_position {
+			self.handle_long_click(x, y);
 		}
-            if state.follow
-		{
-		state.position = Some((data.longitude, data.latitude));
-                dirty = true;
-		}
-        }
-	
-        while let Some(event) = screen.event_pump.poll_event() 
-	    {
-            match event 
-		{
-		// move map left
-		Event::KeyDown { keycode: Some(Keycode::Left), keymod, .. } => {
-			if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) {
-			    // Shift + Left
-			    state.position = Some(renderer.screen_to_gps(1000,0));
-			    
-			    println!("Shift+Left détecté");
-			} else {
-			    // Left seul
-			    state.position = Some(renderer.screen_to_gps(100,0));
-			    println!("Left seul");
-			}
-			dirty = true;
-		    }
-
-		// move map right
-		Event::KeyDown { keycode: Some(Keycode::Right), keymod, .. } => {
-			if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) {
-			    // Shift + Left
-			    state.position = Some(renderer.screen_to_gps(-1000,0));
-			    println!("Shift+Left détecté");
-			} else {
-			    // Left seul
-			    state.position = Some(renderer.screen_to_gps(-100,0));
-			    println!("Left seul");
-			}
-			dirty = true;
-		    }
-
-		// move map down
-		Event::KeyDown { keycode: Some(Keycode::Down), keymod, .. } => {
-			if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) {
-			    // Shift + Left
-			    state.position = Some(renderer.screen_to_gps(0,-500));
-			    println!("Shift+Left détecté");
-			} else {
-			    // Left seul
-			    state.position = Some(renderer.screen_to_gps(0,-100));
-			    println!("Left seul");
-			}
-			dirty = true;
-		    }
-
-		// move map up
-		Event::KeyDown { keycode: Some(Keycode::Up), keymod, .. } => {
-			if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD) {
-			    // Shift + Left
-			    state.position = Some(renderer.screen_to_gps(0,500));
-			    println!("Shift+Left détecté");
-			} else {
-			    // Left seul
-			    state.position = Some(renderer.screen_to_gps(0,100));
-			    println!("Left seul");
-			}
-			dirty = true;
-		    }
-
-		
-		// Molette de la souris : zoom avant/arrière
-		Event::MouseWheel { y, direction, mouse_x: _, mouse_y: _, .. } => 
-			{
-		    let delta = match direction 
-				{
-				sdl2::mouse::MouseWheelDirection::Flipped => -y.signum(),
-			_ 		=> y.signum(),
-		    	};
-		    //let dx = map.screen_width as i32 / 2 - mouse_x;
-		    //let dy = map.screen_height as i32 / 2 - mouse_y;
-		    //state.position = Some(renderer.screen_to_gps( dx as i32, dy as i32));  // centre la carte sur la position de la souris
-		    
-		    if delta > 0 
-				{
-				state.zoom = renderer.zoom_increase(&state.map); // retourne le nouveau pour information
-				}
-		    if delta < 0 
-				{
-				state.zoom = renderer.zoom_decrease();   // retourne le nouveau pour information
-				}
-			state.map_offset = (0,0);
-		    map.cursor_wait.set();
-		    is_zooming = true;
-		    dirty = true;
 		}
 
-		// zoom in (+)
-		Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::KpPlus), .. } => {
-		    state.zoom = renderer.zoom_increase(&state.map);
-		    is_zooming = true;
-		    dirty = true;
-			state.map_offset = (0,0);
-			//println!("position : {:.1} / {:.2} ",state.position.unwrap().0,state.position.unwrap().1);
-		    map.cursor_wait.set();
-		    }
+	fn handle_keyboard_event(&mut self, event: &Event, map: &mut screen::Map<'_>) {
+		match event {
+			Event::KeyDown { keycode, keymod, .. } => match keycode {
 
-		 // zoom out (-)
-		Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::KpMinus), .. } => {
-		    state.zoom = renderer.zoom_decrease();
-		    is_zooming = true;
-		    dirty = true;
-			state.map_offset = (0,0);
-			println!("position : {:.1} / {:.2} ",state.position.unwrap().0,state.position.unwrap().1);
-		    map.cursor_wait.set();
-		    }
+				Some(sdl2::keyboard::Keycode::Escape) => {
+					self.running = false;
+					}
 
-		 // Center Boat (F)
-		Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F), .. } => {
-		    println!("follow Boat");
-		    
-		    if state.follow
-			{
-			let pt = renderer.gps_to_point((boat.longitude, boat.latitude));
-			let dx = map.screen_width as i32 / 2 - pt.x + state.map_offset.0;
-			let dy = map.screen_height as i32 / 2 - pt.y + state.map_offset.1;
-			state.position = Some(renderer.screen_to_gps(dx, dy));
+				Some(sdl2::keyboard::Keycode::Up) => {
+					println!("Move map Up"); 
+					self.state.position = Some(self.renderer.screen_to_gps(
+						0,
+						if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD){1000} else {100},
+						));
+					self.dirty = true;
+					}
+
+				Some(sdl2::keyboard::Keycode::Down) => {
+					println!("Move map Down"); 
+					self.state.position = Some(self.renderer.screen_to_gps(
+						0,
+						if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD){-1000} else {-100},
+						));
+					self.dirty = true;
+					}
+
+				Some(sdl2::keyboard::Keycode::Left) => {
+					println!("Move map left"); 
+					self.state.position = Some(self.renderer.screen_to_gps(
+						if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD){1000} else {100},
+						0,
+						));
+					self.dirty = true;
+					}
+
+				Some(sdl2::keyboard::Keycode::Right) => {
+					println!("Move map Right"); 
+					self.state.position = Some(self.renderer.screen_to_gps(
+						if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD){-1000} else {-100},
+						0,
+						));
+					self.dirty = true;
+					}
+
+				Some(sdl2::keyboard::Keycode::KpPlus) => {
+					self.state.zoom = self.renderer.zoom_increase(&self.state.map);
+					//is_zooming = true;
+					self.state.map_offset = (0,0);
+					self.dirty = true;
+					}
+
+				Some(sdl2::keyboard::Keycode::KpMinus) => {
+					self.state.zoom = self.renderer.zoom_decrease();
+					//is_zooming = true;
+					self.state.map_offset = (0,0);
+					self.dirty = true;
+					}
+				Some(sdl2::keyboard::Keycode::F) => {
+					self.state.follow = !self.state.follow;
+					self.dirty = true;
+					}
+				_ => {}
+			},
+			_ => {}
 			}
-		    state.follow = !state.follow;
-		    state.map_offset = (0,0);
-		    dirty = true;
-		    }
-		
-		 // Previous Wp (P)
-		Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::P), .. } => {
-		    println!("Previous WP");
-		    nav.decrease_id();
-		    dirty = true;
-		    }
-		    
-		 // Next Wp (N)
-		Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::N), .. } => {
-		    println!("Previous WP");
-		    nav.increase_id(route.get_nb_wp());
-		    dirty = true;
-		    }
-		    
-		 // goto (G)
-		Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::G), .. } => {
-		    println!("Goto");
-		    state.goto = !state.goto;
-		    dirty = true;
-		    }
-		    		
-		// Change mode(Tab)
-		Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
-			if state.edit_route
-				{
-				state.edit_route = false;
-		    	state.edit_wp = true;
-		    	state.mesure = false;
-				}
-			else if state.edit_wp
-		    	{
-		    	state.edit_route = false;
-		    	state.edit_wp = false;
-		    	state.mesure = true;
-		    	}
-		    else if state.mesure
-		    	{
-		    	state.edit_route = true;
-		    	state.edit_wp = false;
-		    	state.mesure = false;
-		    	}
-		    else
-		    	{
-		    	state.edit_route = true;
-		    	state.edit_wp = false;
-		    	state.mesure = false;
-		    	}	
-		    dirty = true;
 		}
-		// close topbar
-		Event::KeyDown { keycode: Some(Keycode::Escape), .. } => topbar.close(),
-		
-		Event::MouseButtonDown { mouse_btn: MouseButton::Left, x, y, .. } =>
-		    {
-		    if topbar.mouse(x as u32, y as u32)
-			{
-			// clic sur la barre ou sur le topbar déroulé : le topbar s'en occupe, pas la carte
-			match topbar.event(x as u32, y as u32).as_deref()
+
+	fn handle_topbar_event(&mut self, x: u32, y: u32) {
+			println!("Topbar event");
+			match self.topbar.event(x, y).as_deref()
 			    {
 			    None => {}   // simple ouverture / fermeture d'un topbar
-
-			    Some(topbar::EDIT_ROUTE) =>
+				
+				Some(topbar::EDIT_ROUTE) =>
 					{
-					state.edit_route 	= true;
-					state.edit_wp  		= false;
-					state.mesure  		= false;
-					dirty = true;
+					self.state.edit_route 	= true;
+					self.state.edit_wp  	= false;
+					self.state.mesure  		= false;
+					self.dirty 				= true;
 					}
 				Some(topbar::EDIT_WP) =>
 					{
-					state.edit_route 	= false;
-					state.edit_wp  		= true;
-					state.mesure  		= false;
-					dirty = true;
+					self.state.edit_route 	= false;
+					self.state.edit_wp  	= true;
+					self.state.mesure  		= false;
+					self.dirty 				= true;
 					}
 				Some(topbar::EDIT_MESURE) =>
 					{
-					state.edit_route 	= false;
-					state.edit_wp  		= false;
-					state.mesure  		= true;
-					dirty = true;
+					self.state.edit_route 	= false;
+					self.state.edit_wp  	= false;
+					self.state.mesure  		= true;
+					self.dirty = true;
 					}
-			    Some(topbar::CLEAR_ROUTE) =>
+				Some(topbar::CLEAR_ROUTE) =>
 					{
-					state.goto = false;
-					route.clear();
-					dirty = true;
+					self.state.goto = false;
+					self.route.clear();
+					self.dirty = true;
 					}
-			    Some(topbar::FOLLOW) =>
+				Some(topbar::FOLLOW) =>
 					{
-					state.follow = !state.follow;
-					if !state.follow
-						{
-						let pt = renderer.gps_to_point((boat.longitude, boat.latitude));
-						let dx = map.screen_width as i32 / 2 - pt.x + state.map_offset.0;
-						let dy = map.screen_height as i32 / 2 - pt.y + state.map_offset.1;
-						state.position = Some(renderer.screen_to_gps(dx, dy));
-						}
-					state.map_offset = (0,0);
-					dirty = true;
+					self.state.follow = !self.state.follow;
+					self.state.map_offset = (0,0);
+					self.dirty = true;
 					}
-			    Some(topbar::PREVIOUS) =>
+				Some(topbar::PREVIOUS) =>
 					{
-					nav.decrease_id();
-					dirty = true;
+					self.nav.decrease_id();
+					self.dirty = true;
 					}
 			    Some(topbar::GOTO) =>
 					{
-					state.goto = !state.goto;
-					dirty = true;
+					self.state.goto = !self.state.goto;
+					self.dirty = true;
 					}
 			    Some(topbar::NEXT) =>
 					{
-					nav.increase_id(route.get_nb_wp());
-					dirty = true;
+					self.nav.increase_id(self.route.get_nb_wp());
+					self.dirty = true;
 					}
-			    Some(topbar::QUITTE) =>
+				Some(topbar::QUITTE) =>
 					{
-					match track.save(Path::new(DEFAULT_TRACK_PATH)) 
-						{
-						Ok(()) => 	{
-									println!("Trace sauvegardée");
-									},
-						Err(e) => eprintln!("Erreur sauvegarde : {e}"),
-						}
-					let _ = state.save(STATE_FILE);
-					break 'main;
+					self.running = false;
 					}
-
-			     Some(topbar::CLEAR_TRACK) =>
+				Some(topbar::CLEAR_TRACK) =>
 					{
-					track.reset();
+					//self.track.reset();
 					}
-			    Some(topbar::SAVE_TRACK) =>
+			    Some(topbar::SAVE_TRACK) =>	
 					{
 					println!("Save Track");
 					let now = Local::now();
 					let path = Path::new(DEFAULT_TRACK_DIR)
 						.join(format!("Track-{}.gpx", now.format("%Y-%m-%d_%H-%M-%S")));
-					match track.save(&path)
-						{
-						Ok(()) => 	{
-									println!("Trace sauvegardée : {}", path.display());
-									},
-						Err(e) => eprintln!("Erreur sauvegarde : {e}"),
-						}
+					//match self.track.save(&path)
+					//	{
+					//	Ok(()) => 	{
+					//				println!("Trace sauvegardée : {}", path.display());
+					//				},
+					//	Err(e) => eprintln!("Erreur sauvegarde : {e}"),
+					//	}
 					}
-					Some(name) => 
-						{
-						if let Some(i) = charts_name.iter().position(|n| n == name) 
-						{
-						match renderer.change_map(&charts_path[i])
+				Some(topbar::CLEAR_WP) =>
+					{
+					//self.waypoints.reset();	
+					}
+				Some(topbar::SAVE_WP)=>
+					{
+					println!("Save Waypoints");
+					//self.waypoints.save();
+					}
+				Some(name) =>  // changement de carte
+					{
+					if let Some(i) = self.charts_name.iter().position(|n| n == name) {
+						match self.renderer.change_map(&self.charts_path[i])
 							{
 							Ok(()) => 
-							{
-							state.map = charts_path[i].clone();
-							state.map_offset= (0,0);               // remettre le déplacement à zéro
-							}
-							Err(e) => eprintln!("Impossible d'ouvrir {} : {e}", &charts_path[i]),
-							}
-						}
-						}
-					}
-			press = None;
-			}
-		    else if topbar.is_open()
-				{
-				// clic en dehors d'un topbar ouvert : on le ferme et on avale le clic
-				topbar.close();
-				press = None;
-				}
-		    else // clic sur la carte géré par MouseMotion
-			{
-			press = Some(Press { start: Instant::now(), x, y, moved: false, long_fired: false });
-			}
-		    }
-
-            Event::MouseMotion { x, y, xrel, yrel, .. } => 
-				{
-				topbar.motion(x as u32, y as u32);
-				//if  topbar.mouse(y as u32) 
-				if  topbar.mouse(x as u32,y as u32) 
-					{ 
-					map.cursor_arrow.set();
-					}
-				else
-					{
-					if state.edit_route
-						{
-						selected = route.find_point_at(&renderer, (x, y), 8);
-						if selected.is_some() 
-							{
-							println!("selected : {:?}", selected);
-							map.cursor_size.set();
-							}
-						else{
-							map.cursor_cross.set();
-							}
-						if route.find_midpoint_at(&renderer, (x, y), 8).is_some()
-							{
-							map.cursor_arrow.set();
-							}
-						if let Some(p) = press.as_mut() 
-							{
-							if let Some(i) = selected // il y un waypoint sous la souris
 								{
-								if !p.moved
-									{
-									p.moved = true;
-									}
-								if p.moved  // deplacement du waypoint avec la souris
-									{
-									let dx = map.screen_width as i32 / 2 - x;
-									let dy = map.screen_height as i32 / 2 - y;
-									map.cursor_size.set();
-									let (lon, lat) = renderer.screen_to_gps(dx , dy);
-									route.modify(i, lon, lat);
-									dirty = true;
-									println!("Deplace un point {:?}",selected);
-									}
+								self.state.map = self.charts_path[i].clone();
+								self.state.map_offset= (0,0);               // remettre le déplacement à zéro
 								}
-							else{    // delpacement de la carte avec la souris
-								if !p.moved 
-									{
-									let (dx, dy) = (x - p.x, y - p.y);
-									if dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE    // demarrage du drag
-										{
-										println!("demarrage du drag");
-										p.moved = true;
-										is_dragging = true;
-										drag_start = (x, y);
-										xdrag = 0;
-										ydrag = 0;
-										map.cursor_hand.set();
-										}
-									}
-								if p.moved  // deplacement de la carte avec la souris
-									{
-									if is_dragging 
-									{
-									xdrag += xrel;
-									ydrag += yrel;
-									let _ = map.drag_map(&texture,xdrag,ydrag)?;
-									}
-									}
-								}
+							Err(e) => eprintln!("Impossible d'ouvrir {} : {e}", &self.charts_path[i]),
 							}
-						}	
-			    
-					else if state.mesure	// on n'est pas en mode edit route
-						{
-						if let Some(p) = press.as_mut() 
-							{
-							if !p.moved 
-								{
-								let (dx, dy) = (x - p.x, y - p.y);
-								if dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE    // demarrage du drag
-									{
-									println!("demarrage du drag");
-									p.moved = true;
-									is_dragging = true;
-									drag_start = (x, y);
-									xdrag = 0;
-									ydrag = 0;
-									map.cursor_hand.set();
-									}
-								}
-							if p.moved  // deplacement de la carte avec la souris
-								{
-								if is_dragging 
-								{
-								xdrag += xrel;
-								ydrag += yrel;
-								let _ = map.drag_map(&texture,xdrag,ydrag)?;
-								}
-								}
-							}
-						}
-					else if state.edit_wp
-						{
-						println!(	"Mode Edit Waypoint");
-						}
-					else
-						{
-					
 						}
 					}
+				_ => {}
 				}
-			Event::MouseButtonUp { mouse_btn: MouseButton::Left,x,y, .. } => 
-				{
-				map.cursor_cross.set();
-                    if let Some(p) = press.take() // fin du deplacement de la carte
-						{
-                        if p.moved 
-							{
-							if is_dragging   // drag map
-								{
-								let dx = x - drag_start.0;
-								let dy = y - drag_start.1;
-								//println!("Drag terminé, déplacement total : ({}, {})", dx, dy);
-								state.position = Some(renderer.screen_to_gps(dx, dy));
-								dirty = true;
-								is_dragging = false;
-								state.map_offset.0 += dx;
-								state.map_offset.1 += dy;
-								}
-								else{
-								route.save();
-								}
-			    			} 
-							else if !p.long_fired  // clic court
-								{
-											println!("Clic court ({:?})", p.start.elapsed());
-								match state.edit_route
-								{
-								false =>
-									{
-									println!("Mesure clic");
-									let dx = map.screen_width as i32 / 2 - x;
-									let dy = map.screen_height as i32 / 2 - y;
-									mesure.add_mark(&renderer,dx,dy);
-									dirty = true;
-									}
-								true =>
-								{
-								selected = route.find_point_at(&renderer, (x, y), 8);
-								println!("selected {:?}",selected);
-								if selected == None
-								{
-								if let Some(k) = route.find_midpoint_at(&renderer, (x, y), 8) // nouveau point entre k et k+1
-									{
-									let (longitude, latitude) = route.midpoints()[k];
-									route.insert(k, longitude, latitude);     
-									println!("Ajoute un point entre deux wp");
-									}
-								else 	
-									{                      // nouveau point en fin de route
-									let dx = map.screen_width as i32 / 2 - x;
-									let dy = map.screen_height as i32 / 2 - y;
-									let (longitude,latitude) = renderer.screen_to_gps(dx, dy);
-									route.add(longitude,latitude);
-									println!("Ajoute un point à la fin");
-									//println!("route {route:?}");
-									}
-					    
-					    		}
-							route.save();
-							dirty = true;
-							}
-						}
-			    	}
-				}
-		    }
-
-		_ => {}
-                }
-	    }
-	
-	if let Some(p) = press.as_mut()  // clic long to remove waypoint
-	    {
-            if !p.moved && !p.long_fired && p.start.elapsed() >= LONG_CLICK 
-		{
-                p.long_fired = true;
-                println!("Clic long en ({}, {})", p.x, p.y);
-		
-		match state.edit_route 
-		    {
-		    true =>
-			{
-			println!("Delete Point");
-			if let Some(i) = route.find_point_at(&renderer, (p.x, p.y), 8) 
-			    {
-			    route.remove(i);
-			    route.save();
-			    dirty = true;
-			    }
-			}
-		    _ => {}
-		    }
-		
 		}
-	    }
-	    
-        // Redessine la carte uniquement si quelque chose a change
-        // (deplacement, zoom, suivi du bateau...), et pas pendant un drag
-        // (le drag a son propre rendu via map.drag_map).
-        if dirty && !is_dragging 
-	    {
-	    
-/////////////////// Affichage de la carte /////////////////////////////////
 
-	    let pixels = match state.follow // mode fixed or follow boat
-		{
-		true =>
-		    {
-		    renderer.get_raw_rgba( boat.longitude,  boat.latitude,  state.map_offset)
-		    }
-		false =>
-		    {
-		    let (lon, lat) = state.position.ok_or("position de la carte inconnue")?;
-		    renderer.get_raw_rgba(lon, lat,  (0,0))		    
-		    }
-		};
-             
-            texture
-                .update(None, &pixels, pitch)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            let _ = map.show_map(&texture)?;
-	    
-///////////////////// Affichage du bateau  ////////////////////////////////////
-	    
-	    boat.show( &renderer, &mut map);
-	    ais::show_targets(&ais_targets, &renderer, &mut map)?;
-
-////////////////// Affichage de la route  soit en mode normal ou mode nav /////////////////////////////////////////////////////
-	    
-	    if state.goto
-			{
-			route.show_route_from_boat(&renderer, &mut map, state.edit_route,nav.get_id(), boat.position());
+	fn handle_mouse_down(&mut self, x :u32, y: u32) {
+			if self.topbar.mouse(x, y) {
+							self.handle_topbar_event(x, y);
+							}
+						else if self.topbar.is_open(){
+							// clic en dehors d'un topbar ouvert : on le ferme et on avale le clic
+							self.topbar.close();
+							self.press = None;
+							}
+						else {			// clic sur la carte géré par MouseMotion
+							self.drag_start = (x as i32, y as i32);
+							self.press = Some(Press { start: Instant::now(), x: x as i32, y: y as i32, moved: false, long_fired: false });
+							}
 			}
-	    else
-			{
-			route.show_route_since_id(&renderer, &mut map, state.edit_route, 0);
+
+	fn handle_mouse_up(&mut self, x: i32, y: i32,map: &mut screen::Map<'_>,) {
+			//println!("Handle mouse up {} {}",x,y);
+			if let Some(p) = self.press.take(){ // fin du deplacement de la carte
+				if p.moved{
+					println!("finish drag map");
+					if self.is_draging  { // drag map
+					    let dx = x - self.drag_start.0;
+					    let dy = y - self.drag_start.1;
+					    //println!("Drag terminé, déplacement total : ({}, {})", dx, dy);
+					    self.state.position = Some(self.renderer.screen_to_gps(dx, dy));
+					    self.dirty = true;
+					    self.is_draging = false;
+					    self.state.map_offset.0 += dx;
+					    self.state.map_offset.1 += dy;
+					    }
+					}
+				else if  !p.long_fired {
+					self.handle_short_click(map, x, y);
+					}
+				}
 			}
-		
-//////////////// Affichage de la mesure////////////////////////////////////////////////////
 
-	    if state.mesure
-		 	{
-	        mesure.show(&renderer, &mut map);
-	    	}
-
-	    if is_zooming
-			{
-			map.cursor_cross.set();
-			is_zooming = false;
+	fn handle_mouse_motion(
+		&mut self,
+		x: u32,
+		y: u32,
+		xrel: i32,
+		yrel: i32,
+		map: &mut screen::Map<'_>,
+		texture: &sdl2::render::Texture,
+	) -> Result<(), String> {
+			//println!("Handle mouse motion {} {} {} {}", x, y, xrel, yrel);
+			self.topbar.motion(x as u32, y as u32);
+			if  self.topbar.mouse(x as u32,y as u32) { 
+					//map.cursor_arrow.set();
+					}
+			else{
+				self.handle_move_map(x as i32, y as i32, xrel, yrel, map, texture)?;
+				//println!("Mouse Move");
+				}
+			Ok(())
 			}
-		
-	    dirty = false;
-	    
-	    
-/////////////////// topbar //////////////////////////////////////////////////
 
-	    topbar.show(&mut map.canvas);
-
-/////////////////////buttombar bar soit en mode normal soit en mode nav /////////
-
-	    let message_left = 
-		if state.goto
-		    {
-		    let (dist_wp, bearing_wp, dist_total) = route.calc_route_mn_from_boat(nav.get_id(), boat.position());
-		    format!("From Boat to Next Waypoint :  {:.1} Mn   {:.0}° / DTD : {:.1} Mn",dist_wp, bearing_wp, dist_total)
-		    } 
-		else 
-		    {
-		    route.show_route_len()
-		    };
-		
-		let mut message_right =
-		if state.edit_route
-			{
-			"Mode Edit Route".to_string()
+	fn handle_mouse_wheel(&mut self, delta: i32) {
+			println!("Handle mouse whell {}", delta);
 			}
-		else if state.edit_wp
-			{
-			"Mode Edit Waypoint".to_string()
+
+	fn handle_mouse_event(
+		&mut self,
+		event: &Event,
+		map: &mut screen::Map<'_>,
+		texture: &sdl2::render::Texture,
+	) -> Result<(), String> {
+		match event {
+
+			Event::MouseButtonDown { mouse_btn, x, y, .. } => {
+				if *mouse_btn == sdl2::mouse::MouseButton::Left {
+					if let (Ok(x), Ok(y)) = (u32::try_from(*x), u32::try_from(*y)) {
+						self.handle_mouse_down(x, y);
+						}
+					}
+				}
+
+			Event::MouseButtonUp { mouse_btn, x,y,.. } => {
+				if *mouse_btn == sdl2::mouse::MouseButton::Left {
+					self.handle_mouse_up(*x, *y, map);
+					}
+				}
+
+			Event::MouseMotion { x, y, xrel,yrel,.. } => {
+				if let (Ok(x), Ok(y), Ok(xrel), Ok(yrel)) = 
+					(u32::try_from(*x), u32::try_from(*y), i32::try_from(*xrel), i32::try_from(*yrel)){
+						self.handle_mouse_motion(x, y, xrel, yrel, map, texture)?;
+						}
+					}
+			
+			Event::MouseWheel { y, direction,.. } => {
+				let delta = match direction {
+						sdl2::mouse::MouseWheelDirection::Flipped => -y.signum(),
+			_ 			=> y.signum(),
+		    			};
+				self.handle_mouse_wheel(delta);
+				}
+
+			_ => {}
 			}
-		else if state.mesure
-			{
-			"Mode Mesure".to_string()
+		Ok(())
+		}
+
+	fn match_event(
+		&mut self,
+		event: Event,
+		map: &mut screen::Map<'_>,
+		texture: &sdl2::render::Texture,
+	) -> Result<(), String> {
+		match &event {
+			Event::KeyDown { .. }  => {
+				//println!("Keyboard event");
+				self.handle_keyboard_event(&event, map);
 			}
-		else
-			{
-			"No Mode".to_string()
-			};
-
-		message_right += 
-		if state.follow
-			{
-			" / Follow"
+			Event::MouseButtonDown { .. }
+			| Event::MouseButtonUp { .. }
+			| Event::MouseMotion { .. }
+			| Event::MouseWheel { .. } => {
+				self.handle_mouse_event(&event, map, texture)?;
 			}
-		else
-			{
-			""
-			};
-	    buttombar.show(&mut map.canvas,&message_left, &message_right);
-	
-	    
-/////////////////////// Track ///////////////////////////////////////////
-
-	    track.add(boat.position());
-	    track.show(&mut map.canvas, &renderer, Some(boat.position()));
-	
-//////////////////////// Mode Nuit  ///////////////////////////////////////////
-
-	    let _ = map.night_layer(0)?;
-	    
-////////////////////// prechargement des tuiles voisines /////////////////////////////////////	
-
-	    if renderer.prefetch_step(8)  
-			{ 
-			// println!("loading tilles");
-			}      // 4 tuiles par frame
-	    }
-
-/////////////////////// Evite de saturer le CPU (pas de vsync ici a priori) : ~60 fps max.
-
-        std::thread::sleep(Duration::from_millis(16));
-    }
-
-    Ok(())
+			Event::Quit { .. } => {
+				self.running = false;
+			}
+			_ => {}
+			}
+		Ok(())
+		}
 }
-
-/// Liste les fichiers .mbtiles d'un dossier, triés par nom.
-pub fn list_maps(dir: &str) -> Vec<String> {
-    let mut maps: Vec<String> = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().map_or(false, |e| e.eq_ignore_ascii_case("mbtiles")))
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect();
-    maps.sort();
-    maps
-}
-
- fn display_name(path: &str) -> &str {
-        Path::new(path)
-            .file_stem()          // "fidji" (sans dossier ni extension)
-            .and_then(|s| s.to_str())
-            .unwrap_or(path)
-    }  

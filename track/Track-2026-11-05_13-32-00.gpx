@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="boat-tracker" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Track 2026-11-05 13:32:00</name>
+    <trkseg>
+      <trkpt lat="-18.888588" lon="178.464823"/>
+      <trkpt lat="-18.888770" lon="178.464764"/>
+      <trkpt lat="-18.888552" lon="178.464826"/>
+      <trkpt lat="-18.884258" lon="178.451303"/>
+      <trkpt lat="-18.886961" lon="178.437334"/>
+      <trkpt lat="-18.891031" lon="178.423720"/>
+      <trkpt lat="-18.894991" lon="178.410075"/>
+      <trkpt lat="-18.898286" lon="178.396249"/>
+      <trkpt lat="-18.901794" lon="178.382451"/>
+      <trkpt lat="-18.905495" lon="178.368731"/>
+      <trkpt lat="-18.908994" lon="178.354942"/>
+      <trkpt lat="-18.912493" lon="178.341162"/>
+      <trkpt lat="-18.915959" lon="178.327376"/>
+      <trkpt lat="-18.919896" lon="178.313709"/>
+      <trkpt lat="-18.924519" lon="178.300303"/>
+      <trkpt lat="-18.928959" lon="178.286824"/>
+      <trkpt lat="-18.933349" lon="178.273317"/>
+      <trkpt lat="-18.939152" lon="178.260424"/>
+      <trkpt lat="-18.943801" lon="178.247033"/>
+      <trkpt lat="-18.954158" lon="178.237882"/>
+      <trkpt lat="-18.959308" lon="178.237175"/>
+    </trkseg>
+  </trk>
+</gpx>
