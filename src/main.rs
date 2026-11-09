@@ -184,6 +184,9 @@ impl<'ttf> Plotter<'ttf> {
 				self.dirty = false;
 				}
 			
+			/////////////// preload tiles on the edge ////////////////////////////É	²
+			self.renderer.prefetch_step(8);
+			
 			/////// Sleep to limit CPU usage /////////////////////////
 			std::thread::sleep(Duration::from_millis(16));
 			} // end while self.running
@@ -219,7 +222,7 @@ impl<'ttf> Plotter<'ttf> {
 		////////////////// Route display /////////////////
 		self.display_route(map);
 
-		////////// Affichage du bateau  ////////////////////////////////////
+		////////// Boat display  ////////////////////////////////////
 	    self.boat.show( &self.renderer, map);
 
 		/////////////// Topbar display ///////////////////////
@@ -230,8 +233,6 @@ impl<'ttf> Plotter<'ttf> {
 
 		map.night_layer(0).map_err(anyhow::Error::msg)?;
 
-		/////////////// preload tiles on the edge ////////////////////////////É	²
-		self.renderer.prefetch_step(8);
 		Ok(())
 		}
 
@@ -672,9 +673,9 @@ impl<'ttf> Plotter<'ttf> {
 						println!("Deplace un point {:?}",self.selected);
 						}
 					}
+			else{
+				self.handle_move_map(x, y, xrel, yrel, map, texture)?;
 				}
-		else{
-			self.handle_move_map(x, y, xrel, yrel, map, texture)?;
 			}
 		Ok(())
 		}
@@ -711,7 +712,7 @@ impl<'ttf> Plotter<'ttf> {
 			if delta > 0 {
 				self.state.zoom = self.renderer.zoom_increase(&self.state.map); // retourne le nouveau pour information
 				}
-		    if delta < 0 {
+		    else if delta < 0 {
 				self.state.zoom = self.renderer.zoom_decrease();   // retourne le nouveau pour information
 				}
 			self.state.map_offset = (0,0);
