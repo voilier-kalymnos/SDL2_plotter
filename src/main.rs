@@ -80,7 +80,6 @@ struct Plotter<'ttf> {
 	charts_name: Vec<String>,
 	press: Option<Press>,
 	selected: Option<usize>,
-
 	state_rx: watch::Receiver<BoatState>,
     track_rx: tokio::sync::mpsc::UnboundedReceiver<(f64, f64)>,
     ais_rx: watch::Receiver<Vec<ais::AisTarget>>,
@@ -367,8 +366,22 @@ impl<'ttf> Plotter<'ttf> {
 			}
 		}
 
+	fn handle_long_click_edit_route(&mut self, x: i32, y: i32){
+
+		println!("Delete Point");
+		if let Some(i) = self.route.find_point_at(&self.renderer, (x, y), 8) 
+			{
+			self.route.remove(i);
+			self.route.save();
+			self.dirty = true;
+			}
+		}
+
 	fn handle_long_click(&mut self, x :i32, y: i32){
 		println!("Click long en ({}, {})", x, y);
+		if self.state.edit_route{
+			self.handle_long_click_edit_route(x, y);
+			}
 		}
 
 	fn long_click(&mut self) {
@@ -595,6 +608,44 @@ impl<'ttf> Plotter<'ttf> {
 				}
 			}
 
+	fn handle_mouse_motion_edit_route(
+			&mut self, 
+			x: i32, 
+			y: i32, 
+			xrel: i32, 
+			yrel: i32,
+			map: &mut screen::Map<'_>,
+			texture: &sdl2::render::Texture,) -> Result<(), String>{
+		self.selected = self.route.find_point_at(&self.renderer, (x, y), 8);
+		if self.selected.is_some() {
+			println!("selected : {:?}", self.selected);
+			//map.cursor_size.set();
+			}
+		if self.route.find_midpoint_at(&self.renderer, (x, y), 8).is_some(){
+			//map.cursor_arrow.set();
+			}
+		if let Some(p) = self.press.as_mut() {
+				if let Some(i) = self.selected { // il y un waypoint sous la souris
+					if !p.moved{
+						p.moved = true;
+						}
+					if p.moved  {// deplacement du waypoint avec la souris
+						let dx = map.screen_width as i32 / 2 - x;
+						let dy = map.screen_height as i32 / 2 - y;
+						//map.cursor_size.set();
+						let (lon, lat) = self.renderer.screen_to_gps(dx , dy);
+						self.route.modify(i, lon, lat);
+						self.dirty = true;
+						println!("Deplace un point {:?}",self.selected);
+						}
+					}
+				}
+		else{
+			self.handle_move_map(x, y, xrel, yrel, map, texture)?;
+			}
+		Ok(())
+		}
+		
 	fn handle_mouse_motion(
 		&mut self,
 		x: u32,
@@ -610,7 +661,13 @@ impl<'ttf> Plotter<'ttf> {
 					//map.cursor_arrow.set();
 					}
 			else{
-				self.handle_move_map(x as i32, y as i32, xrel, yrel, map, texture)?;
+				let (x, y) = (x as i32, y as i32);
+				if self.state.edit_route {
+					self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?;
+					}
+				else{
+					self.handle_move_map(x, y, xrel, yrel, map, texture)?;
+					}
 				//println!("Mouse Move");
 				}
 			Ok(())
