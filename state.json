@@ -2,12 +2,12 @@
   "edit_route": false,
   "edit_wp": false,
   "mesure": true,
-  "follow": false,
+  "follow": true,
   "goto": true,
   "map": "map/Fiji_Navionics.mbtiles",
   "position": [
-    178.26175689697266,
-    -18.886147657739023
+    178.1571525846614,
+    -19.046923214308343
   ],
   "zoom": 9,
   "map_offset": [

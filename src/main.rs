@@ -462,6 +462,39 @@ impl<'ttf> Plotter<'ttf> {
 					self.state.follow = !self.state.follow;
 					self.dirty = true;
 					}
+				Some(sdl2::keyboard::Keycode::Tab) => {
+					if self.state.edit_route{
+						self.state.edit_route = false;
+						self.state.edit_wp = true;
+						self.state.mesure = false;
+						}
+					else if self.state.edit_wp{
+						self.state.edit_route = false;
+						self.state.edit_wp = false;
+						self.state.mesure = true;
+						}
+					else if self.state.mesure{
+						self.state.edit_route = true;
+						self.state.edit_wp = false;
+						self.state.mesure = false;
+						}
+					else{
+						self.state.edit_route = true;
+						self.state.edit_wp = false;
+						self.state.mesure = false;
+						}	
+					self.dirty = true;
+					}
+				Some(sdl2::keyboard::Keycode::P) => {
+					println!("Previous WP");
+					self.nav.decrease_id();
+					self.dirty = true;
+					}
+				Some(sdl2::keyboard::Keycode::N) => {
+					println!("Previous WP");
+					self.nav.increase_id(self.route.get_nb_wp());
+					self.dirty = true;
+					}
 				_ => {}
 			},
 			_ => {}
