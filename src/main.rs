@@ -486,12 +486,12 @@ impl<'ttf> Plotter<'ttf> {
 					self.dirty = true;
 					}
 				Some(sdl2::keyboard::Keycode::P) => {
-					println!("Previous WP");
+					println!("Goto Previous WP");
 					self.nav.decrease_id();
 					self.dirty = true;
 					}
 				Some(sdl2::keyboard::Keycode::N) => {
-					println!("Previous WP");
+					println!("Goto Next WP");
 					self.nav.increase_id(self.route.get_nb_wp());
 					self.dirty = true;
 					}
@@ -708,6 +708,16 @@ impl<'ttf> Plotter<'ttf> {
 
 	fn handle_mouse_wheel(&mut self, delta: i32) {
 			println!("Handle mouse whell {}", delta);
+			if delta > 0 {
+				self.state.zoom = self.renderer.zoom_increase(&self.state.map); // retourne le nouveau pour information
+				}
+		    if delta < 0 {
+				self.state.zoom = self.renderer.zoom_decrease();   // retourne le nouveau pour information
+				}
+			self.state.map_offset = (0,0);
+		    //map.cursor_wait.set();
+		    //self.is_zooming = true;
+		    self.dirty = true;
 			}
 
 	fn handle_mouse_event(
