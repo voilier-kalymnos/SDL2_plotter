@@ -18,6 +18,7 @@ mod nav;
 mod route;
 mod mesure;
 mod gps;
+mod track;
 
 use crate::boat::BoatState;
 use mbtiles_renderer::MBTilesRenderer;
@@ -76,6 +77,7 @@ struct Plotter<'ttf> {
 	nav:nav::Nav,
 	route:route::Route,
 	mesure:mesure::Mesure,
+	track:track::Track,
 	charts_path: Vec<String>,
 	charts_name: Vec<String>,
 	press: Option<Press>,
@@ -126,6 +128,7 @@ impl<'ttf> Plotter<'ttf> {
 		let nav 		= nav::Nav::new();
 		let route  	= route::Route::new().map_err(anyhow::Error::msg)?;
 		let mesure 	= mesure::Mesure::new().map_err(anyhow::Error::msg)?;
+		let track    = track::Track::new(Path::new(DEFAULT_TRACK_PATH))?;
 
 		Ok(Self { 	renderer, 
 					state, running: true, 
@@ -140,6 +143,7 @@ impl<'ttf> Plotter<'ttf> {
 					nav,
 					route,
 					mesure,
+					track,
 					charts_path, 
 					charts_name, 
 					press: None, 
@@ -164,8 +168,14 @@ impl<'ttf> Plotter<'ttf> {
 				self.match_event(event, map, texture)
 					.map_err(anyhow::Error::msg)?;
 				}
+			
+			////////////////////// Track update ///////////////////////
+			while let Ok(position) = self.track_rx.try_recv() {
+				self.track.add(position);
+				self.dirty = true;
+				}
 
-			//////////////////////   Position  /////////////////////////
+			//////////////////////   Position update  /////////////////////////
 			if self.state_rx.has_changed()? {
 				let boat = *self.state_rx.borrow_and_update();
 				self.boat = boat;
@@ -186,17 +196,17 @@ impl<'ttf> Plotter<'ttf> {
 			
 			/////////////// preload tiles on the edge ////////////////////////////É	²
 			self.renderer.prefetch_step(8);
-			
+
 			/////// Sleep to limit CPU usage /////////////////////////
 			std::thread::sleep(Duration::from_millis(16));
 			} // end while self.running
 
-			//match self.track.save(Path::new(DEFAULT_TRACK_PATH)) {
-			//			Ok(()) => 	{
-			//						println!("Trace sauvegardée");
-			//						},
-			//			Err(e) => eprintln!("Erreur sauvegarde : {e}"),
-			//			}
+			match self.track.save(Path::new(DEFAULT_TRACK_PATH)) {
+						Ok(()) => 	{
+									println!("Trace sauvegardée");
+									},
+						Err(e) => eprintln!("Erreur sauvegarde : {e}"),
+						}
 			let _ = self.state.save(STATE_FILE);
 			Ok(())
 			}
@@ -224,6 +234,9 @@ impl<'ttf> Plotter<'ttf> {
 
 		////////// Boat display  ////////////////////////////////////
 	    self.boat.show( &self.renderer, map);
+
+		/////////// Display track ///////////////////////////////////////////
+	    self.track.show(&mut map.canvas, &self.renderer, Some(self.boat.position()));
 
 		/////////////// Topbar display ///////////////////////
 		self.topbar.show(&mut map.canvas);
@@ -562,7 +575,7 @@ impl<'ttf> Plotter<'ttf> {
 					}
 				Some(topbar::CLEAR_TRACK) =>
 					{
-					//self.track.reset();
+					self.track.reset();
 					}
 			    Some(topbar::SAVE_TRACK) =>	
 					{
@@ -570,13 +583,12 @@ impl<'ttf> Plotter<'ttf> {
 					let now = Local::now();
 					let path = Path::new(DEFAULT_TRACK_DIR)
 						.join(format!("Track-{}.gpx", now.format("%Y-%m-%d_%H-%M-%S")));
-					//match self.track.save(&path)
-					//	{
-					//	Ok(()) => 	{
-					//				println!("Trace sauvegardée : {}", path.display());
-					//				},
-					//	Err(e) => eprintln!("Erreur sauvegarde : {e}"),
-					//	}
+					match self.track.save(&path){
+						Ok(()) => 	{
+									println!("Trace sauvegardée : {}", path.display());
+									},
+						Err(e) => eprintln!("Erreur sauvegarde : {e}"),
+						}
 					}
 				Some(topbar::CLEAR_WP) =>
 					{
@@ -652,7 +664,7 @@ impl<'ttf> Plotter<'ttf> {
 			texture: &sdl2::render::Texture,) -> Result<(), String>{
 		self.selected = self.route.find_point_at(&self.renderer, (x, y), 8);
 		if self.selected.is_some() {
-			println!("selected : {:?}", self.selected);
+			//println!("selected : {:?}", self.selected);
 			//map.cursor_size.set();
 			}
 		if self.route.find_midpoint_at(&self.renderer, (x, y), 8).is_some(){
