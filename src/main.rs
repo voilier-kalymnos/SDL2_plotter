@@ -61,6 +61,14 @@ struct Press {
     moved: bool,
     long_fired: bool,
 }
+ #[derive(Debug)]
+enum Mouse {
+	Hand,
+	Cross,
+	Arrow,
+	Move,
+	Wait,
+}
 
 struct Plotter<'ttf> {
 	renderer: MBTilesRenderer,
@@ -82,6 +90,7 @@ struct Plotter<'ttf> {
 	charts_name: Vec<String>,
 	press: Option<Press>,
 	selected: Option<usize>,
+	mouse: Mouse,
 	state_rx: watch::Receiver<BoatState>,
     track_rx: tokio::sync::mpsc::UnboundedReceiver<(f64, f64)>,
     ais_rx: watch::Receiver<Vec<ais::AisTarget>>,
@@ -148,6 +157,7 @@ impl<'ttf> Plotter<'ttf> {
 					charts_name, 
 					press: None, 
 					selected: None,
+					mouse: Mouse::Hand,
 					state_rx, 
 					track_rx, 
 					ais_rx, 
@@ -194,7 +204,10 @@ impl<'ttf> Plotter<'ttf> {
 				self.dirty = false;
 				}
 			
-			/////////////// preload tiles on the edge ////////////////////////////É	²
+			/////////////////  Mouse //////////////////////////////////
+			self.mouse(map);
+
+			/////////////// preload tiles on the edge ///////////////////////////
 			self.renderer.prefetch_step(8);
 
 			/////// Sleep to limit CPU usage /////////////////////////
@@ -247,6 +260,17 @@ impl<'ttf> Plotter<'ttf> {
 		map.night_layer(0).map_err(anyhow::Error::msg)?;
 
 		Ok(())
+		}
+
+	fn mouse(&mut self, map: &mut screen::Map){
+		//-println!("Mouse : {:?}", self.mouse);
+		match self.mouse{
+			Mouse::Arrow => map.cursor_arrow.set(), 
+			Mouse::Cross => map.cursor_cross.set(), 
+			Mouse::Hand  => map.cursor_hand.set(),
+			Mouse::Move  => map.cursor_size.set(), 
+			Mouse::Wait  => map.cursor_wait.set(), 
+			}
 		}
 
 	fn display_buttombar(&mut self, map: &mut screen::Map<'_>){
@@ -321,6 +345,7 @@ impl<'ttf> Plotter<'ttf> {
 				self.xdrag += xrel;
 				self.ydrag += yrel;
 				map.drag_map(texture, self.xdrag, self.ydrag)?;
+				self.mouse = Mouse::Hand;
 				}
 			}
 		Ok(())
@@ -357,6 +382,7 @@ impl<'ttf> Plotter<'ttf> {
 					println!("Ajoute un point à la fin");
 					//println!("route {route:?}");
 					}
+				self.mouse = Mouse::Cross;
 				}
 		self.route.save();
 		self.dirty = true;
@@ -388,6 +414,7 @@ impl<'ttf> Plotter<'ttf> {
 			self.route.remove(i);
 			self.route.save();
 			self.dirty = true;
+			self.mouse = Mouse::Cross;
 			}
 		}
 
@@ -646,6 +673,7 @@ impl<'ttf> Plotter<'ttf> {
 					    self.is_draging = false;
 					    self.state.map_offset.0 += dx;
 					    self.state.map_offset.1 += dy;
+						self.mouse = Mouse::Cross;
 					    }
 					}
 				else if  !p.long_fired {
@@ -663,12 +691,13 @@ impl<'ttf> Plotter<'ttf> {
 			map: &mut screen::Map<'_>,
 			texture: &sdl2::render::Texture,) -> Result<(), String>{
 		self.selected = self.route.find_point_at(&self.renderer, (x, y), 8);
+
 		if self.selected.is_some() {
-			//println!("selected : {:?}", self.selected);
-			//map.cursor_size.set();
+			println!("selected : {:?}", self.selected);
+			self.mouse = Mouse::Move;
 			}
 		if self.route.find_midpoint_at(&self.renderer, (x, y), 8).is_some(){
-			//map.cursor_arrow.set();
+			self.mouse = Mouse::Arrow
 			}
 		if let Some(p) = self.press.as_mut() {
 				if let Some(i) = self.selected { // il y un waypoint sous la souris
@@ -678,7 +707,7 @@ impl<'ttf> Plotter<'ttf> {
 					if p.moved  {// deplacement du waypoint avec la souris
 						let dx = map.screen_width as i32 / 2 - x;
 						let dy = map.screen_height as i32 / 2 - y;
-						//map.cursor_size.set();
+						self.mouse = Mouse::Move;
 						let (lon, lat) = self.renderer.screen_to_gps(dx , dy);
 						self.route.modify(i, lon, lat);
 						self.dirty = true;
@@ -704,17 +733,18 @@ impl<'ttf> Plotter<'ttf> {
 			//println!("Handle mouse motion {} {} {} {}", x, y, xrel, yrel);
 			self.topbar.motion(x as u32, y as u32);
 			if  self.topbar.mouse(x as u32,y as u32) { 
-					//map.cursor_arrow.set();
+					self.mouse = Mouse::Arrow;
 					}
 			else{
 				let (x, y) = (x as i32, y as i32);
+				self.mouse = Mouse::Cross;
 				if self.state.edit_route {
 					self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?;
 					}
 				else{
 					self.handle_move_map(x, y, xrel, yrel, map, texture)?;
 					}
-				//println!("Mouse Move");
+
 				}
 			Ok(())
 			}
