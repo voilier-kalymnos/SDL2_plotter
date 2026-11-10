@@ -2,12 +2,18 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
+pub enum Mode {
+	Edit_Route,
+	Edit_Waypoint,
+	#[default]
+	Measurement,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct State {
-    pub edit_route	: bool,
-    pub edit_wp		: bool,
-    pub mesure		: bool,
+    #[serde(default)]
+    pub mode        : Mode,
     pub follow		: bool,
     pub goto		: bool,
     pub map			: String,
@@ -30,9 +36,7 @@ impl State
                     .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
             {
                 Ok(State {
-            edit_route: false,
-            edit_wp: false,
-            mesure: true,
+            mode: Mode::Measurement,
             follow: false,
             goto: false,
             map: init_map,

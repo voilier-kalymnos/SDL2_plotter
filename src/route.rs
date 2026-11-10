@@ -3,6 +3,7 @@ mod gpx;
 use crate::mbtiles_renderer::MBTilesRenderer;
 use crate::screen::Map;
 use crate::gps;
+use crate::state::Mode;
 use sdl2::rect::Point;
  
  #[derive(Debug)]
@@ -42,7 +43,7 @@ impl Route
 		route.calc_route();
 		Ok(route)
 		}
-	pub fn show_route_since_id(&mut self,renderer: &MBTilesRenderer,map: &mut Map,edit_route: bool,id: usize)
+	pub fn show_route_since_id(&mut self,renderer: &MBTilesRenderer,map: &mut Map,mode: Mode,id: usize)
 		{
 		let rte = &self.track[id..];
 		if rte.len() >= 1 {
@@ -52,7 +53,7 @@ impl Route
 						.collect();
 		    map.show_route(&pts);
 		    }
-	     if edit_route
+	     if mode == Mode::Edit_Route
 			{
 			 if rte.len() >= 2 
 				{
@@ -65,13 +66,13 @@ impl Route
 				}
 			}
 		}
-	pub fn show_route_from_boat(&mut self,renderer: &MBTilesRenderer,map: &mut Map, edit_route:bool,id: usize,boat: (f64,f64))
+	pub fn show_route_from_boat(&mut self,renderer: &MBTilesRenderer,map: &mut Map, mode: Mode,id: usize,boat: (f64,f64))
 		{
 		map.show_route(&[ 
 						renderer.gps_to_point(boat),
 						renderer.gps_to_point(self.track[id])
 						]);
-		self.show_route_since_id(renderer, map,edit_route, id);
+		self.show_route_since_id(renderer, map,mode, id);
 		}
 	
 	pub fn show_route_len(&self) -> String

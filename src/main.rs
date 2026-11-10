@@ -21,6 +21,7 @@ mod gps;
 mod track;
 
 use crate::boat::BoatState;
+use crate::state::Mode;
 use mbtiles_renderer::MBTilesRenderer;
 use sdl2::event::Event;
 use std::time::{Duration, Instant};
@@ -69,6 +70,7 @@ enum Mouse {
 	Move,
 	Wait,
 }
+
 
 struct Plotter<'ttf> {
 	renderer: MBTilesRenderer,
@@ -238,7 +240,7 @@ impl<'ttf> Plotter<'ttf> {
 		map.show_map(texture).map_err(anyhow::Error::msg)?;
 
 		//////////////// Mesure display   ////////////  
-	    if self.state.mesure{
+	    if self.state.mode == Mode::Measurement {
 	        self.mesure.show(&self.renderer, map);
 	    	}
 		
@@ -286,18 +288,11 @@ impl<'ttf> Plotter<'ttf> {
 				};
 		
 		let mut message_right =
-			if self.state.edit_route{
-				"Mode Edit Route".to_string()
-				}
-			else if self.state.edit_wp{
-				"Mode Edit Waypoint".to_string()
-				}
-			else if self.state.mesure{
-				"Mode Mesure".to_string()
-				}
-			else{
-				"No Mode".to_string()
-				};
+			match self.state.mode{
+				Mode::Edit_Route 	=> "Mode Edit Route".to_string(),
+				Mode::Edit_Waypoint => "Mode Edit Waypoint".to_string(),
+				Mode::Measurement 	=> "Mode Measurement".to_string(),
+			};
 
 		message_right += 
 			if self.state.follow{
@@ -311,10 +306,10 @@ impl<'ttf> Plotter<'ttf> {
 
 	fn display_route(&mut self,  map: &mut screen::Map<'_>){
  		if self.state.goto{
-			self.route.show_route_from_boat(&self.renderer, map, self.state.edit_route,self.nav.get_id(), self.boat.position());
+			self.route.show_route_from_boat(&self.renderer, map, self.state.mode,self.nav.get_id(), self.boat.position());
 			}
 	    else{
-			self.route.show_route_since_id(&self.renderer, map, self.state.edit_route, 0);
+			self.route.show_route_since_id(&self.renderer, map, self.state.mode, 0);
 			}
 		}
 
@@ -371,7 +366,7 @@ impl<'ttf> Plotter<'ttf> {
 					{
 					let (longitude, latitude) = self.route.midpoints()[k];
 					self.route.insert(k, longitude, latitude);     
-					println!("Ajoute un point entre deux wp");
+					println!("Add waypoint between two waypoint");
 					}
 				else 	
 					{                      // nouveau point en fin de route
@@ -379,7 +374,7 @@ impl<'ttf> Plotter<'ttf> {
 					let dy = map.screen_height as i32 / 2 - y;
 					let (longitude,latitude) = self.renderer.screen_to_gps(dx, dy);
 					self.route.add(longitude,latitude);
-					println!("Ajoute un point à la fin");
+					println!("Add waypoint at the end of the route");
 					//println!("route {route:?}");
 					}
 				self.mouse = Mouse::Cross;
@@ -395,15 +390,12 @@ impl<'ttf> Plotter<'ttf> {
 
 	fn handle_short_click(&mut self, map: &mut screen::Map<'_>, x :i32, y: i32){
 		//println!("Click court en ({}, {})", x, y);
-		if self.state.mesure{
-			self.handle_click_mesure(map, x,y);
-			}
-		else if self.state.edit_route{
-			self.handle_click_edit_route(map, x,y);
-			}
-		else if self.state.edit_wp{
-			self.handle_click_edit_wp(map, x, y);
-			}
+		match self.state.mode{
+			Mode::Measurement 	=> self.handle_click_mesure(map, x,y),
+			Mode::Edit_Route 	=> self.handle_click_edit_route(map, x,y),
+			Mode::Edit_Waypoint => self.handle_click_edit_wp(map, x, y),
+			};
+
 		}
 
 	fn handle_long_click_edit_route(&mut self, x: i32, y: i32){
@@ -420,9 +412,11 @@ impl<'ttf> Plotter<'ttf> {
 
 	fn handle_long_click(&mut self, x :i32, y: i32){
 		println!("Click long en ({}, {})", x, y);
-		if self.state.edit_route{
-			self.handle_long_click_edit_route(x, y);
-			}
+		match self.state.mode{
+			Mode::Edit_Route 	=> self.handle_long_click_edit_route(x, y),
+			Mode::Edit_Waypoint => {},
+			Mode::Measurement 	=> {},
+			};
 		}
 
 	fn long_click(&mut self) {
@@ -504,26 +498,11 @@ impl<'ttf> Plotter<'ttf> {
 					self.dirty = true;
 					}
 				Some(sdl2::keyboard::Keycode::Tab) => {
-					if self.state.edit_route{
-						self.state.edit_route = false;
-						self.state.edit_wp = true;
-						self.state.mesure = false;
+					match self.state.mode {
+						Mode::Edit_Route => self.state.mode=Mode::Edit_Waypoint,
+						Mode::Edit_Waypoint => self.state.mode=Mode::Measurement,
+						Mode::Measurement => self.state.mode=Mode::Edit_Route,
 						}
-					else if self.state.edit_wp{
-						self.state.edit_route = false;
-						self.state.edit_wp = false;
-						self.state.mesure = true;
-						}
-					else if self.state.mesure{
-						self.state.edit_route = true;
-						self.state.edit_wp = false;
-						self.state.mesure = false;
-						}
-					else{
-						self.state.edit_route = true;
-						self.state.edit_wp = false;
-						self.state.mesure = false;
-						}	
 					self.dirty = true;
 					}
 				Some(sdl2::keyboard::Keycode::P) => {
@@ -550,23 +529,17 @@ impl<'ttf> Plotter<'ttf> {
 				
 				Some(topbar::EDIT_ROUTE) =>
 					{
-					self.state.edit_route 	= true;
-					self.state.edit_wp  	= false;
-					self.state.mesure  		= false;
-					self.dirty 				= true;
+					self.state.mode = Mode::Edit_Route;
+					self.dirty = true;
 					}
 				Some(topbar::EDIT_WP) =>
 					{
-					self.state.edit_route 	= false;
-					self.state.edit_wp  	= true;
-					self.state.mesure  		= false;
-					self.dirty 				= true;
+					self.state.mode = Mode::Edit_Waypoint;
+					self.dirty = true;
 					}
 				Some(topbar::EDIT_MESURE) =>
 					{
-					self.state.edit_route 	= false;
-					self.state.edit_wp  	= false;
-					self.state.mesure  		= true;
+					self.state.mode = Mode::Measurement;
 					self.dirty = true;
 					}
 				Some(topbar::CLEAR_ROUTE) =>
@@ -738,13 +711,11 @@ impl<'ttf> Plotter<'ttf> {
 			else{
 				let (x, y) = (x as i32, y as i32);
 				self.mouse = Mouse::Cross;
-				if self.state.edit_route {
-					self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?;
-					}
-				else{
-					self.handle_move_map(x, y, xrel, yrel, map, texture)?;
-					}
-
+				match self.state.mode {
+					Mode::Edit_Route => self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?,
+					Mode::Edit_Waypoint => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
+					Mode::Measurement => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
+					};
 				}
 			Ok(())
 			}
