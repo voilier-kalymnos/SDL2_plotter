@@ -295,7 +295,6 @@ impl<'ttf> Plotter<'ttf> {
 			_ => self.state.position.ok_or(anyhow::anyhow!("position de la carte inconnue"))?,
 			};
 		let pixels = self.renderer.get_raw_rgba(lon, lat, self.state.map_offset);
-		println!("offset : {:?}",self.state.map_offset);
 		texture
 			.update(None, &pixels, pitch)
 			.map_err(|error| anyhow::anyhow!(error))?;
@@ -636,7 +635,7 @@ impl<'ttf> Plotter<'ttf> {
 			}
 			AppAction::ToggleFollow => {
 				self.state.follow = !self.state.follow;
-				self.state.map_offset = (0, 0);
+				self.center_map_on_visible_center();
 			}
 			AppAction::ToggleGoto => self.state.goto = !self.state.goto,
 			AppAction::ClearRoute => {

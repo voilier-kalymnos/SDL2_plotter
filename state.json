@@ -3,10 +3,10 @@
   "goto": true,
   "map": "map/Fiji_Navionics.mbtiles",
   "position": [
-    177.906578753257,
-    -18.332272530133146
+    177.80305402486783,
+    -18.315008822480184
   ],
-  "zoom": 10,
+  "zoom": 13,
   "map_offset": [
     0,
     0
