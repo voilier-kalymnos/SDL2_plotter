@@ -9,6 +9,7 @@ pub struct BoatState
     {
     pub longitude           : f64,
     pub latitude            : f64,
+    pub position_valid      : bool,
     pub speed_over_ground   : f64,
     pub course_over_ground  : f64,
     }
@@ -19,7 +20,13 @@ impl BoatState
     {
      pub fn default() -> Self 
         {
-        BoatState { longitude: 0.0, latitude: 0.0, speed_over_ground: 0.0, course_over_ground:0.0 }
+        BoatState {
+            longitude: 0.0,
+            latitude: 0.0,
+            position_valid: false,
+            speed_over_ground: 0.0,
+            course_over_ground: 0.0,
+        }
         }
         
     pub fn show(
@@ -27,6 +34,9 @@ impl BoatState
 			renderer    : &MBTilesRenderer,
 			map         : &mut Map)
         {
+        if !self.position_valid {
+            return;
+        }
         //println!("show longitude : {} / latitude : {}",self.longitude,self.latitude);
         let pt = renderer.gps_to_point((self.longitude, self.latitude));
         let _ = map.show_boat(pt.x as i16, pt.y as i16);	
@@ -41,4 +51,3 @@ impl BoatState
         (self.longitude,self.latitude)
         }
     }
-

@@ -244,6 +244,14 @@ impl MBTilesRenderer {
         return image.into_raw();
     }
 
+    pub fn center_with_offset(&self, center: (f64, f64), offset: (i32, i32)) -> (f64, f64) {
+        let (center_x, center_y) = self.project(center.0, center.1);
+        self.pixel_to_lonlat(
+            center_x - offset.0 as f64,
+            center_y - offset.1 as f64,
+        )
+    }
+
     pub fn gps_to_point(&self, pos: (f64,f64)) -> Point
         {
         let (world_x, world_y) = self.project(pos.0, pos.1);

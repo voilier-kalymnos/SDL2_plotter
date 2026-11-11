@@ -30,7 +30,7 @@ use sdl2::keyboard::Mod;
 use tokio::sync::watch;
 use std:: path::Path;
 use chrono::Local;
-use serde::{Deserialize, Serialize};
+
 
 const MAP_WORLD	:&str			= "assets/OSM.mbtiles";
 const STATE_FILE :&str  		= "state.json"; 
@@ -55,12 +55,20 @@ async fn main() -> anyhow::Result<()> {
 	plotter.main_loop(&mut sdl.event_pump, &mut map, &mut texture, pitch)
 	}
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum Mode {
 	Edit_Route,
 	Edit_Waypoint,
 	#[default]
 	Measurement,
+}
+
+fn valid_boat_position(boat: &BoatState) -> bool {
+	boat.position_valid
+		&& boat.longitude.is_finite()
+		&& boat.latitude.is_finite()
+		&& (-180.0..=180.0).contains(&boat.longitude)
+		&& (-90.0..=90.0).contains(&boat.latitude)
 }
 
 enum AppAction {
@@ -103,7 +111,6 @@ enum Mouse {
 	Move,
 	Wait,
 }
-
 
 struct Plotter<'ttf> {
 	renderer: MBTilesRenderer,
@@ -241,7 +248,7 @@ impl<'ttf> Plotter<'ttf> {
 				let boat = *self.state_rx.borrow_and_update();
 				self.boat = boat;
 
-				if self.state.follow {
+				if self.state.follow && valid_boat_position(&boat) {
 					self.state.position = Some((boat.longitude, boat.latitude));
 					}
     			self.dirty = true;
@@ -281,8 +288,14 @@ impl<'ttf> Plotter<'ttf> {
 		if self.state.position == None{
 			self.state.position = Some(self.renderer.tiles_center().ok_or(anyhow::anyhow!("no tiles center!!!"))?);
 			}
-		let (lon, lat) = self.state.position.ok_or(anyhow::anyhow!("position de la carte inconnue"))?;
+		let (lon, lat) = match self.state.follow { // mode fixed or follow boat
+			true if valid_boat_position(&self.boat) => {
+				( self.boat.longitude,  self.boat.latitude)
+				}
+			_ => self.state.position.ok_or(anyhow::anyhow!("position de la carte inconnue"))?,
+			};
 		let pixels = self.renderer.get_raw_rgba(lon, lat, self.state.map_offset);
+		println!("offset : {:?}",self.state.map_offset);
 		texture
 			.update(None, &pixels, pitch)
 			.map_err(|error| anyhow::anyhow!(error))?;
@@ -623,9 +636,7 @@ impl<'ttf> Plotter<'ttf> {
 			}
 			AppAction::ToggleFollow => {
 				self.state.follow = !self.state.follow;
-				if self.state.follow {
-					self.state.map_offset = (0, 0);
-				}
+				self.state.map_offset = (0, 0);
 			}
 			AppAction::ToggleGoto => self.state.goto = !self.state.goto,
 			AppAction::ClearRoute => {
@@ -671,19 +682,38 @@ impl<'ttf> Plotter<'ttf> {
 				}
 			}
 			AppAction::Pan(dx, dy) => {
-				self.state.map_offset.0 += dx;
-				self.state.map_offset.1 += dy;
+				self.pan_map(dx, dy);
 			}
 			AppAction::ZoomIn => {
+				//self.center_map_on_visible_center();
 				self.state.zoom = self.renderer.zoom_increase(&self.state.map);
-				self.state.map_offset = (0, 0);
 			}
 			AppAction::ZoomOut => {
+				//self.center_map_on_visible_center();
 				self.state.zoom = self.renderer.zoom_decrease();
-				self.state.map_offset = (0, 0);
 			}
 		}
 		self.dirty = true;
+	}
+
+	fn pan_map(&mut self, dx: i32, dy: i32) {
+		if self.state.follow {
+			self.state.map_offset.0 += dx;
+			self.state.map_offset.1 += dy;
+		} else {
+			self.state.position = Some(self.renderer.screen_to_gps(dx, dy));
+			self.state.map_offset = (0, 0);
+		}
+	}
+
+	fn center_map_on_visible_center(&mut self) {
+		if let Some(position) = self.state.position {
+			self.state.position = Some(
+				self.renderer
+					.center_with_offset(position, self.state.map_offset),
+			);
+			self.state.map_offset = (0, 0);
+		}
 	}
 
 	fn handle_mouse_down(&mut self, x :u32, y: u32) {
@@ -712,8 +742,7 @@ impl<'ttf> Plotter<'ttf> {
 					    //println!("Drag terminé, déplacement total : ({}, {})", dx, dy);
 					    self.dirty = true;
 					    self.is_draging = false;
-					    self.state.map_offset.0 += dx;
-					    self.state.map_offset.1 += dy;
+					    self.pan_map(dx, dy);
 						self.mouse = Mouse::Cross;
 					    }
 					}
@@ -870,4 +899,47 @@ impl<'ttf> Plotter<'ttf> {
 			}
 		Ok(())
 		}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::valid_boat_position;
+	use crate::boat::BoatState;
+
+	#[test]
+	fn accepts_received_positions_within_gps_bounds() {
+		let mut boat = BoatState::default();
+		boat.position_valid = true;
+		assert!(valid_boat_position(&boat));
+
+		boat.longitude = 180.0;
+		boat.latitude = 90.0;
+		assert!(valid_boat_position(&boat));
+
+		boat.longitude = -180.0;
+		boat.latitude = -90.0;
+		assert!(valid_boat_position(&boat));
+	}
+
+	#[test]
+	fn rejects_missing_non_finite_or_out_of_range_boat_positions() {
+		let mut boat = BoatState::default();
+		assert!(!valid_boat_position(&boat));
+
+		boat.position_valid = true;
+		boat.longitude = f64::NAN;
+		assert!(!valid_boat_position(&boat));
+
+		boat.longitude = 0.0;
+		boat.latitude = f64::INFINITY;
+		assert!(!valid_boat_position(&boat));
+
+		boat.latitude = 0.0;
+		boat.longitude = 180.1;
+		assert!(!valid_boat_position(&boat));
+
+		boat.longitude = 0.0;
+		boat.latitude = -90.1;
+		assert!(!valid_boat_position(&boat));
+	}
 }

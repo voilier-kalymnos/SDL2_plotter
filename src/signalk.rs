@@ -38,6 +38,7 @@ const SUBSCRIBED_PATHS: [&str; 3] =
 pub struct SignalKData {
     pub latitude:   f64,
     pub longitude:  f64,
+    pub position_valid: bool,
     pub cog:        f64,
     pub sog:        f64,
     }
@@ -224,6 +225,7 @@ impl SignalKClient {
                                             {
                                                 self.data.latitude = latitude;
                                                 self.data.longitude = longitude;
+                                                self.data.position_valid = true;
                                                 self_position_updated = true;
                                             }
                                         }
@@ -360,6 +362,7 @@ pub async fn signalk_task(
             let state = BoatState {
                 longitude: signalk.data.longitude,
                 latitude: signalk.data.latitude,
+                position_valid: signalk.data.position_valid,
                 course_over_ground: signalk.data.cog,
                 speed_over_ground: signalk.data.sog,
                 };
