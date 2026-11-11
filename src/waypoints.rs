@@ -1,9 +1,9 @@
-use sdl2::pixels::Color;
-use sdl2::render::WindowCanvas;
+use sdl2::gfx::primitives::DrawRenderer;
 use serde::{Deserialize, Serialize};
 use std::{fs, io, path::Path};
 
 use crate::mbtiles_renderer::MBTilesRenderer;
+use crate::screen::Map;
 
 const WAYPOINTS_FILE: &str = "waypoints";
 
@@ -11,6 +11,8 @@ const WAYPOINTS_FILE: &str = "waypoints";
 struct Waypoint {
     lon: f64,
     lat: f64,
+    #[serde(default)]
+    name: String,
 }
 
 pub struct Waypoints {
@@ -30,7 +32,7 @@ impl Waypoints {
         Ok(waypoints)
     }
 
-    pub fn add(&mut self, pos: (f64, f64)) {
+    pub fn add(&mut self, pos: (f64, f64), name: String) {
         
         let (longitude, latitude) = pos;
         if !longitude.is_finite()
@@ -43,26 +45,61 @@ impl Waypoints {
         self.waypoints.push(Waypoint {
             lon: longitude,
             lat: latitude,
+            name,
         });
     }
 
     pub fn modify(&mut self, i:usize, pos: (f64, f64)) {
         let (longitude, latitude) = pos;
-        if i < self.waypoints.len() {
-            self.waypoints[i] = Waypoint { lon: longitude, lat: latitude };
+        if let Some(waypoint) = self.waypoints.get_mut(i) {
+            waypoint.lon = longitude;
+            waypoint.lat = latitude;
         }
     }
+
+	pub fn find_point_at(
+		&self,
+		renderer: &MBTilesRenderer,
+		mouse: (i32, i32),
+		radius: i32,
+		) -> Option<usize> {
+			let r2 = (radius as i64) * (radius as i64);
+			self.waypoints
+				.iter()
+				.enumerate()
+				.map(|(i, waypoint)| {
+					let pt = renderer.gps_to_point((waypoint.lon, waypoint.lat));
+					let dx = pt.x as i64 - mouse.0 as i64;
+					let dy = pt.y as i64 - mouse.1 as i64;
+					(i, dx * dx + dy * dy)
+				})
+				.filter(|&(_, d2)| d2 <= r2)
+				.min_by_key(|&(_, d2)| d2)
+				.map(|(i, _)| i)
+				}
 
     pub fn remove(&mut self, i: usize) {
         self.waypoints.remove(i);
     }
 
-    pub fn show(&self, canvas: &mut WindowCanvas, renderer: &MBTilesRenderer) {
-        for wp in &self.waypoints {
+    pub fn show(&self, map: &mut Map<'_>, renderer: &MBTilesRenderer) -> Result<(), String> {
+        for (i, wp) in self.waypoints.iter().enumerate() {
             let point = renderer.gps_to_point((wp.lon, wp.lat));
-            canvas.set_draw_color(Color::RGB(255, 0, 0));
-            let _ = canvas.fill_rect(sdl2::rect::Rect::new(point.x - 3, point.y - 3, 6, 6));
+            let x = point.x as i16;
+            let y = point.y as i16;
+            let color = sdl2::pixels::Color::RGB(220, 30, 30);
+            map.canvas.filled_trigon(x - 5, y - 9, x + 5, y - 9, x, y, color)?;
+            map.canvas.filled_circle(x, y - 11, 6, color)?;
+            map.canvas
+                .filled_circle(x, y - 11, 2, sdl2::pixels::Color::WHITE)?;
+            let label = if wp.name.is_empty() {
+                format!("Waypoint {}", i + 1)
+            } else {
+                wp.name.clone()
+            };
+            map.show_text(&label, point.x + 10, point.y - 12)?;
         }
+        Ok(())
     }
 
     pub fn reset(&mut self) {
@@ -105,7 +142,7 @@ mod tests {
         let mut original = Waypoints {
             waypoints: Vec::new(),
         };
-        original.add((178.1, -17.7));
+        original.add((178.1, -17.7), "Mouillage".to_string());
 
         original.save_to(&path).unwrap();
         let mut loaded = Waypoints {
@@ -116,7 +153,24 @@ mod tests {
         assert_eq!(loaded.waypoints.len(), 1);
         assert_eq!(loaded.waypoints[0].lon, 178.1);
         assert_eq!(loaded.waypoints[0].lat, -17.7);
+        assert_eq!(loaded.waypoints[0].name, "Mouillage");
 
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn loads_waypoints_without_names() {
+        let path =
+            std::env::temp_dir().join(format!("plotter-waypoints-legacy-{}.json", std::process::id()));
+        fs::write(&path, r#"[{"lon":178.1,"lat":-17.7}]"#).unwrap();
+        let mut loaded = Waypoints {
+            waypoints: Vec::new(),
+        };
+
+        loaded.load_from(&path).unwrap();
+
+        assert_eq!(loaded.waypoints.len(), 1);
+        assert_eq!(loaded.waypoints[0].name, "");
         fs::remove_file(path).unwrap();
     }
 

@@ -14,11 +14,11 @@ mod boat;
 mod ais;
 mod topbar;
 mod buttombar;
-mod nav;
 mod route;
 mod mesure;
 mod gps;
 mod track;
+mod waypoints;
 
 use crate::boat::BoatState;
 use crate::state::Mode;
@@ -31,6 +31,7 @@ use sdl2::keyboard::Mod;
 use tokio::sync::watch;
 use std:: path::Path;
 use chrono::Local;
+use std::cmp::min;
 
 const MAP_WORLD	:&str			= "assets/OSM.mbtiles";
 const STATE_FILE :&str  		= "state.json"; 
@@ -43,7 +44,7 @@ const MOVE_TOLERANCE: i32 		= 5;
 async fn main() -> anyhow::Result<()> {
 
 	let mut sdl = screen::MoteurSdl::init().map_err(anyhow::Error::msg)?;
-	let mut map = screen::Map::new(&sdl.ttf_context, &sdl.context).map_err(anyhow::Error::msg)?;
+	let mut map   = screen::Map::new(&sdl.ttf_context, &sdl.context).map_err(anyhow::Error::msg)?;
 
 	let texture_creator = map.canvas.texture_creator();
 	let mut texture = texture_creator
@@ -51,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
 		.map_err(anyhow::Error::msg)?;
 	let pitch = (map.screen_width * 4) as usize;
 
-	let mut plotter = Plotter::new(&sdl.ttf_context, map.screen_width, map.screen_height)?;
+	let mut plotter = Plotter::new(&sdl.context, &sdl.ttf_context, map.screen_width, map.screen_height)?;
 	plotter.main_loop(&mut sdl.event_pump, &mut map, &mut texture, pitch)
 	}
 
@@ -62,6 +63,12 @@ struct Press {
     moved: bool,
     long_fired: bool,
 }
+
+struct PendingWaypoint {
+	position: (f64, f64),
+	name: String,
+}
+
  #[derive(Debug)]
 enum Mouse {
 	Hand,
@@ -84,10 +91,12 @@ struct Plotter<'ttf> {
 	boat: BoatState,
 	topbar: topbar::Topbar<'ttf>,
 	buttombar: buttombar::Buttombar<'ttf>,
-	nav:nav::Nav,
 	route:route::Route,
 	mesure:mesure::Mesure,
 	track:track::Track,
+	waypoints:waypoints::Waypoints,
+	pending_waypoint: Option<PendingWaypoint>,
+	text_input: sdl2::keyboard::TextInputUtil,
 	charts_path: Vec<String>,
 	charts_name: Vec<String>,
 	press: Option<Press>,
@@ -101,7 +110,16 @@ struct Plotter<'ttf> {
 
 impl<'ttf> Plotter<'ttf> {
 
-	fn new(ttf_context: &'ttf Sdl2TtfContext, width: u32, height: u32) -> anyhow::Result<Self> {
+	fn new(
+		sdl_context: &sdl2::Sdl,
+		ttf_context: &'ttf Sdl2TtfContext,
+		width: u32,
+		height: u32,
+	) -> anyhow::Result<Self> {
+		let text_input = sdl_context
+			.video()
+			.map_err(anyhow::Error::msg)?
+			.text_input();
 		let boat = BoatState::default();
 		let (state_tx, state_rx) = watch::channel(boat);
 		let (track_tx, track_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -136,10 +154,10 @@ impl<'ttf> Plotter<'ttf> {
 			.map_err(anyhow::Error::msg)?;
 		let buttombar 	= buttombar::Buttombar::new(ttf_context, width, height)
 			.expect("failed to build buttombar bar");
-		let nav 		= nav::Nav::new();
-		let route  	= route::Route::new().map_err(anyhow::Error::msg)?;
-		let mesure 	= mesure::Mesure::new().map_err(anyhow::Error::msg)?;
-		let track    = track::Track::new(Path::new(DEFAULT_TRACK_PATH))?;
+		let route  		= route::Route::new().map_err(anyhow::Error::msg)?;
+		let mesure 		= mesure::Mesure::new().map_err(anyhow::Error::msg)?;
+		let track    	= track::Track::new(Path::new(DEFAULT_TRACK_PATH))?;
+		let waypoints= waypoints::Waypoints::new()?;
 
 		Ok(Self { 	renderer, 
 					state, running: true, 
@@ -151,10 +169,12 @@ impl<'ttf> Plotter<'ttf> {
 					boat, 
 					topbar, 
 					buttombar,
-					nav,
 					route,
 					mesure,
 					track,
+					waypoints,
+					pending_waypoint: None,
+					text_input,
 					charts_path, 
 					charts_name, 
 					press: None, 
@@ -253,6 +273,9 @@ impl<'ttf> Plotter<'ttf> {
 		/////////// Display track ///////////////////////////////////////////
 	    self.track.show(&mut map.canvas, &self.renderer, Some(self.boat.position()));
 
+		//////////// Dispaly Waypoints ///////////////////////
+		self.waypoints.show(map, &self.renderer).map_err(anyhow::Error::msg)?;
+
 		/////////////// Topbar display ///////////////////////
 		self.topbar.show(&mut map.canvas);
 
@@ -276,10 +299,16 @@ impl<'ttf> Plotter<'ttf> {
 		}
 
 	fn display_buttombar(&mut self, map: &mut screen::Map<'_>){
+		if let Some(pending) = &self.pending_waypoint {
+			let message_left = format!("Nom du waypoint : {}", pending.name);
+			let message_right = "Entrée : valider | Échap : annuler";
+			self.buttombar.show(&mut map.canvas, &message_left, message_right);
+			return;
+		}
 		
 		let message_left = 
 			if self.state.goto{
-				let (dist_wp, bearing_wp, dist_total) = self.route.calc_route_mn_from_boat(self.nav.get_id(), self.boat.position());
+				let (dist_wp, bearing_wp, dist_total) = self.route.calc_route_mn_from_boat(self.state.nav_id, self.boat.position());
 				format!("From Boat to Next Waypoint :  {:.1} Mn   {:.0}° / DTD : {:.1} Mn",dist_wp, bearing_wp, dist_total)
 				} 
 			else 
@@ -306,7 +335,7 @@ impl<'ttf> Plotter<'ttf> {
 
 	fn display_route(&mut self,  map: &mut screen::Map<'_>){
  		if self.state.goto{
-			self.route.show_route_from_boat(&self.renderer, map, self.state.mode,self.nav.get_id(), self.boat.position());
+			self.route.show_route_from_boat(&self.renderer, map, self.state.mode,self.state.nav_id, self.boat.position());
 			}
 	    else{
 			self.route.show_route_since_id(&self.renderer, map, self.state.mode, 0);
@@ -360,8 +389,7 @@ impl<'ttf> Plotter<'ttf> {
 			println!("Edit route click");
 			self.selected = self.route.find_point_at(&self.renderer, (x, y), 8);
 			println!("selected {:?}",self.selected);
-			if self.selected == None
-				{
+			if self.selected == None{
 				if let Some(k) = self.route.find_midpoint_at(&self.renderer, (x, y), 8) // nouveau point entre k et k+1
 					{
 					let (longitude, latitude) = self.route.midpoints()[k];
@@ -379,13 +407,20 @@ impl<'ttf> Plotter<'ttf> {
 					}
 				self.mouse = Mouse::Cross;
 				}
-		self.route.save();
-		self.dirty = true;
+			self.route.save();
+			self.dirty = true;
 			}
 
 	fn handle_click_edit_wp(&mut self,map: &mut screen::Map<'_>,x :i32, y: i32){
 			println!("Edit waypoint click");
-
+			let dx = map.screen_width as i32 / 2 - x;
+			let dy = map.screen_height as i32 / 2 - y;
+			self.pending_waypoint = Some(PendingWaypoint {
+				position: self.renderer.screen_to_gps(dx, dy),
+				name: String::new(),
+			});
+			self.text_input.start();
+			self.dirty = true;
 			}
 
 	fn handle_short_click(&mut self, map: &mut screen::Map<'_>, x :i32, y: i32){
@@ -395,12 +430,11 @@ impl<'ttf> Plotter<'ttf> {
 			Mode::Edit_Route 	=> self.handle_click_edit_route(map, x,y),
 			Mode::Edit_Waypoint => self.handle_click_edit_wp(map, x, y),
 			};
-
 		}
 
 	fn handle_long_click_edit_route(&mut self, x: i32, y: i32){
 
-		println!("Delete Point");
+		println!("Delete Point on route");
 		if let Some(i) = self.route.find_point_at(&self.renderer, (x, y), 8) 
 			{
 			self.route.remove(i);
@@ -410,11 +444,23 @@ impl<'ttf> Plotter<'ttf> {
 			}
 		}
 
+	fn handle_long_click_edit_wp(&mut self,x :i32, y: i32){
+		println!("Delete Point waypoint");
+		if let Some(i) = self.waypoints.find_point_at(&self.renderer, (x, y), 8) {
+			self.waypoints.remove(i);
+			if let Err(error) = self.waypoints.save() {
+				eprintln!("Erreur sauvegarde des waypoints : {error}");
+			}
+			self.dirty = true;
+			self.mouse = Mouse::Cross;
+			}
+		}
+		
 	fn handle_long_click(&mut self, x :i32, y: i32){
 		println!("Click long en ({}, {})", x, y);
 		match self.state.mode{
 			Mode::Edit_Route 	=> self.handle_long_click_edit_route(x, y),
-			Mode::Edit_Waypoint => {},
+			Mode::Edit_Waypoint => self.handle_long_click_edit_wp(x, y),
 			Mode::Measurement 	=> {},
 			};
 		}
@@ -436,14 +482,58 @@ impl<'ttf> Plotter<'ttf> {
 		}
 		}
 
-	fn handle_keyboard_event(&mut self, event: &Event, map: &mut screen::Map<'_>) {
+	fn handle_pending_waypoint_event(&mut self, event: &Event) {
+		match event {
+			Event::TextInput { text, .. } => {
+				if let Some(pending) = self.pending_waypoint.as_mut() {
+					for character in text.chars().filter(|character| !character.is_control()) {
+						if pending.name.chars().count() >= 64 {
+							break;
+						}
+						pending.name.push(character);
+					}
+				}
+				self.dirty = true;
+			}
+			Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Return | sdl2::keyboard::Keycode::KpEnter), repeat: false, .. } => {
+				if self.pending_waypoint.as_ref().is_some_and(|pending| !pending.name.trim().is_empty()) {
+					if let Some(pending) = self.pending_waypoint.take() {
+						self.text_input.stop();
+						self.waypoints.add(pending.position, pending.name.trim().to_string());
+						if let Err(error) = self.waypoints.save() {
+							eprintln!("Erreur sauvegarde des waypoints : {error}");
+						}
+						println!("Waypoint ajouté : {}", pending.name.trim());
+					}
+				}
+				self.dirty = true;
+			}
+			Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), repeat: false, .. } => {
+				self.pending_waypoint = None;
+				self.text_input.stop();
+				self.dirty = true;
+			}
+			Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Backspace), repeat: false, .. } => {
+				if let Some(pending) = self.pending_waypoint.as_mut() {
+					pending.name.pop();
+				}
+				self.dirty = true;
+			}
+			_ => {}
+		}
+	}
+
+	fn handle_keyboard_event(&mut self, event: &Event, _map: &mut screen::Map<'_>) {
+		if self.pending_waypoint.is_some() {
+			self.handle_pending_waypoint_event(event);
+			return;
+		}
 		match event {
 			Event::KeyDown { keycode, keymod, .. } => match keycode {
 
 				Some(sdl2::keyboard::Keycode::Escape) => {
 					self.running = false;
 					}
-
 				Some(sdl2::keyboard::Keycode::Up) => {
 					println!("Move map Up"); 
 					self.state.position = Some(self.renderer.screen_to_gps(
@@ -452,7 +542,6 @@ impl<'ttf> Plotter<'ttf> {
 						));
 					self.dirty = true;
 					}
-
 				Some(sdl2::keyboard::Keycode::Down) => {
 					println!("Move map Down"); 
 					self.state.position = Some(self.renderer.screen_to_gps(
@@ -461,7 +550,6 @@ impl<'ttf> Plotter<'ttf> {
 						));
 					self.dirty = true;
 					}
-
 				Some(sdl2::keyboard::Keycode::Left) => {
 					println!("Move map left"); 
 					self.state.position = Some(self.renderer.screen_to_gps(
@@ -470,7 +558,6 @@ impl<'ttf> Plotter<'ttf> {
 						));
 					self.dirty = true;
 					}
-
 				Some(sdl2::keyboard::Keycode::Right) => {
 					println!("Move map Right"); 
 					self.state.position = Some(self.renderer.screen_to_gps(
@@ -479,14 +566,12 @@ impl<'ttf> Plotter<'ttf> {
 						));
 					self.dirty = true;
 					}
-
 				Some(sdl2::keyboard::Keycode::KpPlus) => {
 					self.state.zoom = self.renderer.zoom_increase(&self.state.map);
 					//is_zooming = true;
 					self.state.map_offset = (0,0);
 					self.dirty = true;
 					}
-
 				Some(sdl2::keyboard::Keycode::KpMinus) => {
 					self.state.zoom = self.renderer.zoom_decrease();
 					//is_zooming = true;
@@ -507,12 +592,13 @@ impl<'ttf> Plotter<'ttf> {
 					}
 				Some(sdl2::keyboard::Keycode::P) => {
 					println!("Goto Previous WP");
-					self.nav.decrease_id();
+					self.state.nav_id = self.state.nav_id.saturating_sub(1);
 					self.dirty = true;
 					}
 				Some(sdl2::keyboard::Keycode::N) => {
 					println!("Goto Next WP");
-					self.nav.increase_id(self.route.get_nb_wp());
+					self.state.nav_id += 1;
+					self.state.nav_id = min(self.state.nav_id, self.route.get_nb_wp()-1);
 					self.dirty = true;
 					}
 				_ => {}
@@ -525,60 +611,49 @@ impl<'ttf> Plotter<'ttf> {
 			println!("Topbar event");
 			match self.topbar.event(x, y).as_deref()
 			    {
-			    None => {}   // simple ouverture / fermeture d'un topbar
-				
-				Some(topbar::EDIT_ROUTE) =>
-					{
+			    None => {}   // simple ouverture / fermeture d'un topbar	
+				Some(topbar::EDIT_ROUTE) =>{
 					self.state.mode = Mode::Edit_Route;
 					self.dirty = true;
 					}
-				Some(topbar::EDIT_WP) =>
-					{
+				Some(topbar::EDIT_WP) =>{
 					self.state.mode = Mode::Edit_Waypoint;
 					self.dirty = true;
 					}
-				Some(topbar::EDIT_MESURE) =>
-					{
+				Some(topbar::EDIT_MESURE) =>{
 					self.state.mode = Mode::Measurement;
 					self.dirty = true;
 					}
-				Some(topbar::CLEAR_ROUTE) =>
-					{
+				Some(topbar::CLEAR_ROUTE) =>{
 					self.state.goto = false;
 					self.route.clear();
 					self.dirty = true;
 					}
-				Some(topbar::FOLLOW) =>
-					{
+				Some(topbar::FOLLOW) =>{
 					self.state.follow = !self.state.follow;
 					self.state.map_offset = (0,0);
 					self.dirty = true;
 					}
-				Some(topbar::PREVIOUS) =>
-					{
-					self.nav.decrease_id();
+				Some(topbar::PREVIOUS) =>{
+					self.state.nav_id = self.state.nav_id.saturating_sub(1);
 					self.dirty = true;
 					}
-			    Some(topbar::GOTO) =>
-					{
+			    Some(topbar::GOTO) =>{
 					self.state.goto = !self.state.goto;
 					self.dirty = true;
 					}
-			    Some(topbar::NEXT) =>
-					{
-					self.nav.increase_id(self.route.get_nb_wp());
+			    Some(topbar::NEXT) =>{
+					self.state.nav_id += 1;
+					self.state.nav_id = min(self.state.nav_id, self.route.get_nb_wp()-1);
 					self.dirty = true;
 					}
-				Some(topbar::QUITTE) =>
-					{
+				Some(topbar::QUITTE) =>{
 					self.running = false;
 					}
-				Some(topbar::CLEAR_TRACK) =>
-					{
+				Some(topbar::CLEAR_TRACK) =>{
 					self.track.reset();
 					}
-			    Some(topbar::SAVE_TRACK) =>	
-					{
+			    Some(topbar::SAVE_TRACK) =>	{
 					println!("Save Track");
 					let now = Local::now();
 					let path = Path::new(DEFAULT_TRACK_DIR)
@@ -590,17 +665,16 @@ impl<'ttf> Plotter<'ttf> {
 						Err(e) => eprintln!("Erreur sauvegarde : {e}"),
 						}
 					}
-				Some(topbar::CLEAR_WP) =>
-					{
-					//self.waypoints.reset();	
+				Some(topbar::CLEAR_WP) =>{
+					self.waypoints.reset();	
 					}
-				Some(topbar::SAVE_WP)=>
-					{
+				Some(topbar::SAVE_WP)=>{
 					println!("Save Waypoints");
-					//self.waypoints.save();
+					if let Err(error) = self.waypoints.save() {
+						eprintln!("Erreur sauvegarde des waypoints : {error}");
 					}
-				Some(name) =>  // changement de carte
-					{
+					}
+				Some(name) =>  { // changement de carte
 					if let Some(i) = self.charts_name.iter().position(|n| n == name) {
 						match self.renderer.change_map(&self.charts_path[i])
 							{
@@ -783,7 +857,7 @@ impl<'ttf> Plotter<'ttf> {
 		texture: &sdl2::render::Texture,
 	) -> Result<(), String> {
 		match &event {
-			Event::KeyDown { .. }  => {
+			Event::KeyDown { .. } | Event::TextInput { .. } => {
 				//println!("Keyboard event");
 				self.handle_keyboard_event(&event, map);
 			}
@@ -791,7 +865,9 @@ impl<'ttf> Plotter<'ttf> {
 			| Event::MouseButtonUp { .. }
 			| Event::MouseMotion { .. }
 			| Event::MouseWheel { .. } => {
-				self.handle_mouse_event(&event, map, texture)?;
+				if self.pending_waypoint.is_none() {
+					self.handle_mouse_event(&event, map, texture)?;
+				}
 			}
 			Event::Quit { .. } => {
 				self.running = false;

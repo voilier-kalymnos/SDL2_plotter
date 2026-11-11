@@ -15,16 +15,16 @@ const HEIGHT: u32       = 32; // hauteur de la barre
 
 pub const EDIT_ROUTE: &str  = "Edit Route";
 pub const EDIT_WP: &str     = "Edit Waypoint";
-pub const EDIT_MESURE: &str = "Mesure";
-pub const CLEAR_ROUTE: &str = "New Route";
+pub const EDIT_MESURE: &str = "Measurement";
+pub const CLEAR_ROUTE: &str = "Clear Route";
 pub const FOLLOW: &str      = "Follow Boat";
 pub const GOTO: &str        = "From Boat";
 pub const PREVIOUS: &str    = "Previous Wp";
 pub const NEXT: &str        = "Next Wp";
 pub const QUITTE: &str      = "Exit";
-pub const CLEAR_TRACK: &str = "New Track";
-pub const SAVE_TRACK: &str  = "Save";
-pub const CLEAR_WP: &str    = "New Waypoint";
+pub const CLEAR_TRACK: &str = "Clear Track";
+pub const SAVE_TRACK: &str  = "Save Track";
+pub const CLEAR_WP: &str    = "Clear Waypoint";
 pub const SAVE_WP: &str     = "Save Waypoint";
 
 const FONT_FILE: &str = "assets/Montserrat-Regular.ttf";
@@ -56,7 +56,7 @@ impl<'ttf> Topbar<'ttf> {
             Menu { title: "App", entries: vec![
                     QUITTE.into(),
                     ] },
-            Menu { title: "Cartes", entries: names.clone()
+            Menu { title: "Charts", entries: names.clone()
                      },
             Menu {
                 title: "Mode",
@@ -81,7 +81,7 @@ impl<'ttf> Topbar<'ttf> {
                     SAVE_TRACK.into(),
                     ] },
             Menu {
-                title: "Waypoint",
+                title: "Waypoints",
                 entries: vec![
                     CLEAR_WP.into(),
                     SAVE_WP.into(),

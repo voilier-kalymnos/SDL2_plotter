@@ -20,6 +20,7 @@ pub struct State {
     pub position    : Option<(f64, f64)>,
     pub zoom		: i32,
     pub map_offset  : (i32,i32),
+    pub nav_id      : usize,
 }
 
 impl State 
@@ -35,14 +36,15 @@ impl State
                     .downcast_ref::<std::io::Error>()
                     .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
             {
-                Ok(State {
-            mode: Mode::Measurement,
-            follow: false,
-            goto: false,
-            map: init_map,
-            position: None,
-            zoom: 8,
-            map_offset: (0,0),
+            Ok(State {
+                mode: Mode::Measurement,
+                follow: false,
+                goto: false,
+                map: init_map,
+                position: None,
+                zoom: 8,
+                map_offset: (0,0),
+                nav_id: 0,
                 })
             }
             Err(error) => Err(error),
