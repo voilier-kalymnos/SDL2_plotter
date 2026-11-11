@@ -682,7 +682,13 @@ impl<'ttf> Plotter<'ttf> {
 				}
 			}
 			AppAction::Pan(dx, dy) => {
-				self.pan_map(dx, dy);
+				if self.state.follow {
+					self.state.map_offset.0 += dx;
+					self.state.map_offset.1 += dy;
+				} else {
+					self.state.position = Some(self.renderer.screen_to_gps(dx, dy));
+					self.state.map_offset = (0, 0);
+				}
 			}
 			AppAction::ZoomIn => {
 				//self.center_map_on_visible_center();
@@ -694,16 +700,6 @@ impl<'ttf> Plotter<'ttf> {
 			}
 		}
 		self.dirty = true;
-	}
-
-	fn pan_map(&mut self, dx: i32, dy: i32) {
-		if self.state.follow {
-			self.state.map_offset.0 += dx;
-			self.state.map_offset.1 += dy;
-		} else {
-			self.state.position = Some(self.renderer.screen_to_gps(dx, dy));
-			self.state.map_offset = (0, 0);
-		}
 	}
 
 	fn center_map_on_visible_center(&mut self) {
@@ -742,7 +738,7 @@ impl<'ttf> Plotter<'ttf> {
 					    //println!("Drag terminé, déplacement total : ({}, {})", dx, dy);
 					    self.dirty = true;
 					    self.is_draging = false;
-					    self.pan_map(dx, dy);
+					    self.execute_action(AppAction::Pan(dx, dy));
 						self.mouse = Mouse::Cross;
 					    }
 					}
