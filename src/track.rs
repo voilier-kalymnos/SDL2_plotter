@@ -40,6 +40,11 @@ impl Track
 			Ok(()) => println!("Trace chargée : {} / {} points", path.display(), track.points.len()),
 			Err(e) if e.kind() == io::ErrorKind::NotFound =>
 				println!("Aucune trace par défaut trouvée : {}", path.display()),
+			Err(e) if e.kind() == io::ErrorKind::InvalidData =>
+				eprintln!(
+					"Trace GPX invalide ({}), démarrage avec une trace vierge : {e}",
+					path.display()
+				),
 			Err(e) => return Err(e),
 			}
 
@@ -335,6 +340,25 @@ mod tests {
         assert_eq!(track.points.len(), 2);
         assert_eq!((track.points[0].lon, track.points[0].lat), (-122.3, 47.5));
         assert_eq!((track.points[1].lon, track.points[1].lat), (-122.2, 47.6));
+    }
+
+    #[test]
+    fn starts_with_empty_track_when_gpx_has_no_points() {
+        let unique_id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "desktop_plotter_track_empty_{}_{}.gpx",
+            std::process::id(),
+            unique_id
+        ));
+        std::fs::write(&path, "<gpx><trk><trkseg></trkseg></trk></gpx>").unwrap();
+
+        let track = Track::new(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+
+        assert!(track.points.is_empty());
     }
 
     #[test]

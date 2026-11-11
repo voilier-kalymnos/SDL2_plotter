@@ -3,6 +3,10 @@
   <trk>
     <name>Plotter</name>
     <trkseg>
+      <trkpt lat="-18.377642" lon="177.981389"/>
+      <trkpt lat="-18.367543" lon="177.991003"/>
+      <trkpt lat="-18.327458" lon="177.924914"/>
+      <trkpt lat="-18.287373" lon="177.858825"/>
     </trkseg>
   </trk>
 </gpx>

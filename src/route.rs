@@ -3,7 +3,7 @@ mod gpx;
 use crate::mbtiles_renderer::MBTilesRenderer;
 use crate::screen::Map;
 use crate::gps;
-use crate::state::Mode;
+use crate::Mode;
 use sdl2::rect::Point;
  
  #[derive(Debug)]

@@ -1,16 +1,15 @@
 {
-  "mode": "Measurement",
-  "follow": false,
-  "goto": false,
+  "follow": true,
+  "goto": true,
   "map": "map/Fiji_Navionics.mbtiles",
   "position": [
-    177.98444574869131,
-    -18.384766613923958
+    177.98583139600692,
+    -18.378635000550883
   ],
-  "zoom": 15,
+  "zoom": 14,
   "map_offset": [
-    23,
-    -363
+    0,
+    0
   ],
-  "nav_id": 4
+  "nav_id": 0
 }

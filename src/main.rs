@@ -21,7 +21,6 @@ mod track;
 mod waypoints;
 
 use crate::boat::BoatState;
-use crate::state::Mode;
 use mbtiles_renderer::MBTilesRenderer;
 use sdl2::event::Event;
 use std::time::{Duration, Instant};
@@ -31,7 +30,7 @@ use sdl2::keyboard::Mod;
 use tokio::sync::watch;
 use std:: path::Path;
 use chrono::Local;
-use std::cmp::min;
+use serde::{Deserialize, Serialize};
 
 const MAP_WORLD	:&str			= "assets/OSM.mbtiles";
 const STATE_FILE :&str  		= "state.json"; 
@@ -55,6 +54,33 @@ async fn main() -> anyhow::Result<()> {
 	let mut plotter = Plotter::new(&sdl.context, &sdl.ttf_context, map.screen_width, map.screen_height)?;
 	plotter.main_loop(&mut sdl.event_pump, &mut map, &mut texture, pitch)
 	}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
+pub enum Mode {
+	Edit_Route,
+	Edit_Waypoint,
+	#[default]
+	Measurement,
+}
+
+enum AppAction {
+	SetMode(Mode),
+	CycleMode,
+	ToggleFollow,
+	ToggleGoto,
+	ClearRoute,
+	PreviousWaypoint,
+	NextWaypoint,
+	Quit,
+	ClearTrack,
+	SaveTrack,
+	ClearWaypoints,
+	SaveWaypoints,
+	ChangeChart(usize),
+	Pan(i32, i32),
+	ZoomIn,
+	ZoomOut,
+}
 
 struct Press {
     start: Instant,
@@ -82,6 +108,7 @@ enum Mouse {
 struct Plotter<'ttf> {
 	renderer: MBTilesRenderer,
 	state: state::State,
+	mode: Mode,
 	running: bool,
 	dirty: bool,
 	is_draging: bool,
@@ -160,7 +187,9 @@ impl<'ttf> Plotter<'ttf> {
 		let waypoints= waypoints::Waypoints::new()?;
 
 		Ok(Self { 	renderer, 
-					state, running: true, 
+					state, 
+					mode: Mode::default(),
+					running: true, 
 					dirty: true, 
 					is_draging: false, 
 					xdrag: 0,
@@ -253,14 +282,14 @@ impl<'ttf> Plotter<'ttf> {
 			self.state.position = Some(self.renderer.tiles_center().ok_or(anyhow::anyhow!("no tiles center!!!"))?);
 			}
 		let (lon, lat) = self.state.position.ok_or(anyhow::anyhow!("position de la carte inconnue"))?;
-		let pixels = self.renderer.get_raw_rgba(lon, lat, (0, 0));
+		let pixels = self.renderer.get_raw_rgba(lon, lat, self.state.map_offset);
 		texture
 			.update(None, &pixels, pitch)
 			.map_err(|error| anyhow::anyhow!(error))?;
 		map.show_map(texture).map_err(anyhow::Error::msg)?;
 
 		//////////////// Mesure display   ////////////  
-	    if self.state.mode == Mode::Measurement {
+	    if self.mode == Mode::Measurement {
 	        self.mesure.show(&self.renderer, map);
 	    	}
 		
@@ -317,7 +346,7 @@ impl<'ttf> Plotter<'ttf> {
 				};
 		
 		let mut message_right =
-			match self.state.mode{
+			match self.mode{
 				Mode::Edit_Route 	=> "Mode Edit Route".to_string(),
 				Mode::Edit_Waypoint => "Mode Edit Waypoint".to_string(),
 				Mode::Measurement 	=> "Mode Measurement".to_string(),
@@ -335,10 +364,10 @@ impl<'ttf> Plotter<'ttf> {
 
 	fn display_route(&mut self,  map: &mut screen::Map<'_>){
  		if self.state.goto{
-			self.route.show_route_from_boat(&self.renderer, map, self.state.mode,self.state.nav_id, self.boat.position());
+			self.route.show_route_from_boat(&self.renderer, map, self.mode,self.state.nav_id, self.boat.position());
 			}
 	    else{
-			self.route.show_route_since_id(&self.renderer, map, self.state.mode, 0);
+			self.route.show_route_since_id(&self.renderer, map, self.mode, 0);
 			}
 		}
 
@@ -425,7 +454,7 @@ impl<'ttf> Plotter<'ttf> {
 
 	fn handle_short_click(&mut self, map: &mut screen::Map<'_>, x :i32, y: i32){
 		//println!("Click court en ({}, {})", x, y);
-		match self.state.mode{
+		match self.mode{
 			Mode::Measurement 	=> self.handle_click_mesure(map, x,y),
 			Mode::Edit_Route 	=> self.handle_click_edit_route(map, x,y),
 			Mode::Edit_Waypoint => self.handle_click_edit_wp(map, x, y),
@@ -458,7 +487,7 @@ impl<'ttf> Plotter<'ttf> {
 		
 	fn handle_long_click(&mut self, x :i32, y: i32){
 		println!("Click long en ({}, {})", x, y);
-		match self.state.mode{
+		match self.mode{
 			Mode::Edit_Route 	=> self.handle_long_click_edit_route(x, y),
 			Mode::Edit_Waypoint => self.handle_long_click_edit_wp(x, y),
 			Mode::Measurement 	=> {},
@@ -529,167 +558,133 @@ impl<'ttf> Plotter<'ttf> {
 			return;
 		}
 		match event {
-			Event::KeyDown { keycode, keymod, .. } => match keycode {
-
-				Some(sdl2::keyboard::Keycode::Escape) => {
-					self.running = false;
-					}
-				Some(sdl2::keyboard::Keycode::Up) => {
-					println!("Move map Up"); 
-					self.state.position = Some(self.renderer.screen_to_gps(
-						0,
-						if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD){1000} else {100},
-						));
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::Down) => {
-					println!("Move map Down"); 
-					self.state.position = Some(self.renderer.screen_to_gps(
-						0,
-						if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD){-1000} else {-100},
-						));
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::Left) => {
-					println!("Move map left"); 
-					self.state.position = Some(self.renderer.screen_to_gps(
-						if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD){1000} else {100},
-						0,
-						));
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::Right) => {
-					println!("Move map Right"); 
-					self.state.position = Some(self.renderer.screen_to_gps(
-						if keymod.contains(Mod::LSHIFTMOD) || keymod.contains(Mod::RSHIFTMOD){-1000} else {-100},
-						0,
-						));
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::KpPlus) => {
-					self.state.zoom = self.renderer.zoom_increase(&self.state.map);
-					//is_zooming = true;
-					self.state.map_offset = (0,0);
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::KpMinus) => {
-					self.state.zoom = self.renderer.zoom_decrease();
-					//is_zooming = true;
-					self.state.map_offset = (0,0);
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::F) => {
-					self.state.follow = !self.state.follow;
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::Tab) => {
-					match self.state.mode {
-						Mode::Edit_Route => self.state.mode=Mode::Edit_Waypoint,
-						Mode::Edit_Waypoint => self.state.mode=Mode::Measurement,
-						Mode::Measurement => self.state.mode=Mode::Edit_Route,
-						}
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::P) => {
-					println!("Goto Previous WP");
-					self.state.nav_id = self.state.nav_id.saturating_sub(1);
-					self.dirty = true;
-					}
-				Some(sdl2::keyboard::Keycode::N) => {
-					println!("Goto Next WP");
-					self.state.nav_id += 1;
-					self.state.nav_id = min(self.state.nav_id, self.route.get_nb_wp()-1);
-					self.dirty = true;
-					}
-				_ => {}
-			},
+			Event::KeyDown { keycode: Some(keycode), keymod, repeat: false, .. } => {
+				let fast = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
+				let distance = if fast { 1000 } else { 100 };
+				let action = match *keycode {
+					sdl2::keyboard::Keycode::Escape => Some(AppAction::Quit),
+					sdl2::keyboard::Keycode::Up => Some(AppAction::Pan(0, distance)),
+					sdl2::keyboard::Keycode::Down => Some(AppAction::Pan(0, -distance)),
+					sdl2::keyboard::Keycode::Left => Some(AppAction::Pan(distance, 0)),
+					sdl2::keyboard::Keycode::Right => Some(AppAction::Pan(-distance, 0)),
+					sdl2::keyboard::Keycode::KpPlus => Some(AppAction::ZoomIn),
+					sdl2::keyboard::Keycode::KpMinus => Some(AppAction::ZoomOut),
+					sdl2::keyboard::Keycode::F => Some(AppAction::ToggleFollow),
+					sdl2::keyboard::Keycode::Tab => Some(AppAction::CycleMode),
+					sdl2::keyboard::Keycode::P => Some(AppAction::PreviousWaypoint),
+					sdl2::keyboard::Keycode::N => Some(AppAction::NextWaypoint),
+					_ => None,
+				};
+				if let Some(action) = action {
+					self.execute_action(action);
+				}
+			}
 			_ => {}
 			}
 		}
 
 	fn handle_topbar_event(&mut self, x: u32, y: u32) {
-			println!("Topbar event");
-			match self.topbar.event(x, y).as_deref()
-			    {
-			    None => {}   // simple ouverture / fermeture d'un topbar	
-				Some(topbar::EDIT_ROUTE) =>{
-					self.state.mode = Mode::Edit_Route;
-					self.dirty = true;
-					}
-				Some(topbar::EDIT_WP) =>{
-					self.state.mode = Mode::Edit_Waypoint;
-					self.dirty = true;
-					}
-				Some(topbar::EDIT_MESURE) =>{
-					self.state.mode = Mode::Measurement;
-					self.dirty = true;
-					}
-				Some(topbar::CLEAR_ROUTE) =>{
-					self.state.goto = false;
-					self.route.clear();
-					self.dirty = true;
-					}
-				Some(topbar::FOLLOW) =>{
-					self.state.follow = !self.state.follow;
-					self.state.map_offset = (0,0);
-					self.dirty = true;
-					}
-				Some(topbar::PREVIOUS) =>{
-					self.state.nav_id = self.state.nav_id.saturating_sub(1);
-					self.dirty = true;
-					}
-			    Some(topbar::GOTO) =>{
-					self.state.goto = !self.state.goto;
-					self.dirty = true;
-					}
-			    Some(topbar::NEXT) =>{
-					self.state.nav_id += 1;
-					self.state.nav_id = min(self.state.nav_id, self.route.get_nb_wp()-1);
-					self.dirty = true;
-					}
-				Some(topbar::QUITTE) =>{
-					self.running = false;
-					}
-				Some(topbar::CLEAR_TRACK) =>{
-					self.track.reset();
-					}
-			    Some(topbar::SAVE_TRACK) =>	{
-					println!("Save Track");
-					let now = Local::now();
-					let path = Path::new(DEFAULT_TRACK_DIR)
-						.join(format!("Track-{}.gpx", now.format("%Y-%m-%d_%H-%M-%S")));
-					match self.track.save(&path){
-						Ok(()) => 	{
-									println!("Trace sauvegardée : {}", path.display());
-									},
-						Err(e) => eprintln!("Erreur sauvegarde : {e}"),
-						}
-					}
-				Some(topbar::CLEAR_WP) =>{
-					self.waypoints.reset();	
-					}
-				Some(topbar::SAVE_WP)=>{
-					println!("Save Waypoints");
-					if let Err(error) = self.waypoints.save() {
-						eprintln!("Erreur sauvegarde des waypoints : {error}");
-					}
-					}
-				Some(name) =>  { // changement de carte
-					if let Some(i) = self.charts_name.iter().position(|n| n == name) {
-						match self.renderer.change_map(&self.charts_path[i])
-							{
-							Ok(()) => 
-								{
-								self.state.map = self.charts_path[i].clone();
-								self.state.map_offset= (0,0);               // remettre le déplacement à zéro
-								}
-							Err(e) => eprintln!("Impossible d'ouvrir {} : {e}", &self.charts_path[i]),
-							}
-						}
-					}
-				_ => {}
-				}
+		if let Some(name) = self.topbar.event(x, y) {
+			let action = match name.as_str() {
+				topbar::EDIT_ROUTE => Some(AppAction::SetMode(Mode::Edit_Route)),
+				topbar::EDIT_WP => Some(AppAction::SetMode(Mode::Edit_Waypoint)),
+				topbar::EDIT_MESURE => Some(AppAction::SetMode(Mode::Measurement)),
+				topbar::CLEAR_ROUTE => Some(AppAction::ClearRoute),
+				topbar::FOLLOW => Some(AppAction::ToggleFollow),
+				topbar::PREVIOUS => Some(AppAction::PreviousWaypoint),
+				topbar::GOTO => Some(AppAction::ToggleGoto),
+				topbar::NEXT => Some(AppAction::NextWaypoint),
+				topbar::QUITTE => Some(AppAction::Quit),
+				topbar::CLEAR_TRACK => Some(AppAction::ClearTrack),
+				topbar::SAVE_TRACK => Some(AppAction::SaveTrack),
+				topbar::CLEAR_WP => Some(AppAction::ClearWaypoints),
+				topbar::SAVE_WP => Some(AppAction::SaveWaypoints),
+				_ => self
+					.charts_name
+					.iter()
+					.position(|chart_name| chart_name == &name)
+					.map(AppAction::ChangeChart),
+			};
+			if let Some(action) = action {
+				self.execute_action(action);
+			}
 		}
+	}
+
+	fn execute_action(&mut self, action: AppAction) {
+		match action {
+			AppAction::SetMode(mode) => self.mode = mode,
+			AppAction::CycleMode => {
+				self.mode = match self.mode {
+					Mode::Edit_Route => Mode::Edit_Waypoint,
+					Mode::Edit_Waypoint => Mode::Measurement,
+					Mode::Measurement => Mode::Edit_Route,
+				};
+			}
+			AppAction::ToggleFollow => {
+				self.state.follow = !self.state.follow;
+				if self.state.follow {
+					self.state.map_offset = (0, 0);
+				}
+			}
+			AppAction::ToggleGoto => self.state.goto = !self.state.goto,
+			AppAction::ClearRoute => {
+				self.state.goto = false;
+				self.route.clear();
+			}
+			AppAction::PreviousWaypoint => {
+				self.state.nav_id = self.state.nav_id.saturating_sub(1);
+			}
+			AppAction::NextWaypoint => {
+				let last = self.route.get_nb_wp().saturating_sub(1);
+				self.state.nav_id = self.state.nav_id.saturating_add(1).min(last);
+			}
+			AppAction::Quit => self.running = false,
+			AppAction::ClearTrack => self.track.reset(),
+			AppAction::SaveTrack => {
+				println!("Save Track");
+				let now = Local::now();
+				let path = Path::new(DEFAULT_TRACK_DIR)
+					.join(format!("Track-{}.gpx", now.format("%Y-%m-%d_%H-%M-%S")));
+				match self.track.save(&path) {
+					Ok(()) => println!("Trace sauvegardée : {}", path.display()),
+					Err(error) => eprintln!("Erreur sauvegarde : {error}"),
+				}
+			}
+			AppAction::ClearWaypoints => self.waypoints.reset(),
+			AppAction::SaveWaypoints => {
+				println!("Save Waypoints");
+				if let Err(error) = self.waypoints.save() {
+					eprintln!("Erreur sauvegarde des waypoints : {error}");
+				}
+			}
+			AppAction::ChangeChart(index) => {
+				match self.renderer.change_map(&self.charts_path[index]) {
+					Ok(()) => {
+						self.state.map = self.charts_path[index].clone();
+						self.state.map_offset = (0, 0);
+					}
+					Err(error) => eprintln!(
+						"Impossible d'ouvrir {} : {error}",
+						&self.charts_path[index]
+					),
+				}
+			}
+			AppAction::Pan(dx, dy) => {
+				self.state.map_offset.0 += dx;
+				self.state.map_offset.1 += dy;
+			}
+			AppAction::ZoomIn => {
+				self.state.zoom = self.renderer.zoom_increase(&self.state.map);
+				self.state.map_offset = (0, 0);
+			}
+			AppAction::ZoomOut => {
+				self.state.zoom = self.renderer.zoom_decrease();
+				self.state.map_offset = (0, 0);
+			}
+		}
+		self.dirty = true;
+	}
 
 	fn handle_mouse_down(&mut self, x :u32, y: u32) {
 			if self.topbar.mouse(x, y) {
@@ -715,7 +710,6 @@ impl<'ttf> Plotter<'ttf> {
 					    let dx = x - self.drag_start.0;
 					    let dy = y - self.drag_start.1;
 					    //println!("Drag terminé, déplacement total : ({}, {})", dx, dy);
-					    self.state.position = Some(self.renderer.screen_to_gps(dx, dy));
 					    self.dirty = true;
 					    self.is_draging = false;
 					    self.state.map_offset.0 += dx;
@@ -785,7 +779,7 @@ impl<'ttf> Plotter<'ttf> {
 			else{
 				let (x, y) = (x as i32, y as i32);
 				self.mouse = Mouse::Cross;
-				match self.state.mode {
+				match self.mode {
 					Mode::Edit_Route => self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?,
 					Mode::Edit_Waypoint => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
 					Mode::Measurement => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
