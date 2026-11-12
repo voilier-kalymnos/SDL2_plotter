@@ -75,6 +75,7 @@ pub fn list_maps(dir: &str) -> Vec<String> {
     maps
 }
 
+ #[allow(dead_code)]
  fn display_name(path: &str) -> &str {
         Path::new(path)
             .file_stem()          // "fidji" (sans dossier ni extension)

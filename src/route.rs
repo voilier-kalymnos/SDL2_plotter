@@ -53,7 +53,7 @@ impl Route
 						.collect();
 		    map.show_route(&pts);
 		    }
-	     if mode == Mode::Edit_Route
+	     if mode == Mode::EditRoute
 			{
 			 if rte.len() >= 2 
 				{

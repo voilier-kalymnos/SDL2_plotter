@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="boat-tracker" xmlns="http://www.topografix.com/GPX/1/1">
   <trk>
-    <name>Track 2026-11-11 20:14:09</name>
+    <name>Track 2026-11-12 16:37:36</name>
     <trkseg>
       <trkpt lat="-18.378658" lon="177.985842"/>
+      <trkpt lat="-18.378834" lon="177.985931"/>
+      <trkpt lat="-18.378611" lon="177.985819"/>
     </trkseg>
   </trk>
 </gpx>

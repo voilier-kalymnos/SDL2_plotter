@@ -211,6 +211,7 @@ impl<'ttf> Map<'ttf> {
         Ok(())
         }
     
+    #[allow(dead_code)]
     pub fn info(&mut self, texte: &str) -> Result<(), String> {
          println!("{}",&texte);
         self.canvas.set_draw_color(Color::RGB(0,0,0));

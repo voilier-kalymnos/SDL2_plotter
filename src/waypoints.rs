@@ -49,6 +49,7 @@ impl Waypoints {
         });
     }
 
+    #[allow(dead_code)]
     pub fn modify(&mut self, i:usize, pos: (f64, f64)) {
         let (longitude, latitude) = pos;
         if let Some(waypoint) = self.waypoints.get_mut(i) {

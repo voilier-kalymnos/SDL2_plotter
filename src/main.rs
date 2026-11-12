@@ -20,6 +20,7 @@ mod gps;
 mod track;
 mod waypoints;
 
+
 use crate::boat::BoatState;
 use mbtiles_renderer::MBTilesRenderer;
 use sdl2::event::Event;
@@ -57,8 +58,8 @@ async fn main() -> anyhow::Result<()> {
 
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum Mode {
-	Edit_Route,
-	Edit_Waypoint,
+	EditRoute,
+	EditWaypoint,
 	#[default]
 	Measurement,
 }
@@ -109,6 +110,7 @@ enum Mouse {
 	Cross,
 	Arrow,
 	Move,
+	#[allow(dead_code)]
 	Wait,
 }
 
@@ -139,7 +141,10 @@ struct Plotter<'ttf> {
 	state_rx: watch::Receiver<BoatState>,
     track_rx: tokio::sync::mpsc::UnboundedReceiver<(f64, f64)>,
     ais_rx: watch::Receiver<Vec<ais::AisTarget>>,
+	#[allow(dead_code)]
     status_rx: watch::Receiver<String>,
+	ais_targets: Vec<ais::AisTarget>,
+	last_ais_cleanup: Instant,
 }
 
 impl<'ttf> Plotter<'ttf> {
@@ -193,6 +198,7 @@ impl<'ttf> Plotter<'ttf> {
 		let track    	= track::Track::new(Path::new(DEFAULT_TRACK_PATH))?;
 		let waypoints= waypoints::Waypoints::new()?;
 
+
 		Ok(Self { 	renderer, 
 					state, 
 					mode: Mode::default(),
@@ -219,7 +225,10 @@ impl<'ttf> Plotter<'ttf> {
 					state_rx, 
 					track_rx, 
 					ais_rx, 
-					status_rx })
+					status_rx,
+					ais_targets: Vec::new(),
+					last_ais_cleanup: Instant::now(),
+				 })
 	}
 
 	fn main_loop(
@@ -255,6 +264,24 @@ impl<'ttf> Plotter<'ttf> {
 				}
 			
 			self.long_click();
+
+			//////////////// Ais Update //////////////////////////
+			if self.ais_rx.has_changed().unwrap_or(false) {
+				self.ais_targets = self.ais_rx.borrow_and_update().clone();
+				self.dirty = true;
+        		}
+
+			if !self.ais_targets.is_empty()
+					&& self.last_ais_cleanup.elapsed() >= Duration::from_secs(1)
+						{
+						let previous_count = self.ais_targets.len();
+						let now = Instant::now();
+						self.ais_targets.retain(|target| target.is_fresh(now));
+						if self.ais_targets.len() != previous_count {
+							self.dirty = true;
+							}
+						self.last_ais_cleanup = now;
+						}
 
 			//////////////////////   Display /////////////////////////
 			if self.dirty && !self.is_draging {
@@ -308,8 +335,12 @@ impl<'ttf> Plotter<'ttf> {
 		////////////////// Route display /////////////////
 		self.display_route(map);
 
-		////////// Boat display  ////////////////////////////////////
+		/////////////////// Boat display  /////////////////
 	    self.boat.show( &self.renderer, map);
+
+		////////// Ais Display ////////////////////////////
+		ais::show_targets(&self.ais_targets, &self.renderer, map)
+			.map_err(anyhow::Error::msg)?;
 
 		/////////// Display track ///////////////////////////////////////////
 	    self.track.show(&mut map.canvas, &self.renderer, Some(self.boat.position()));
@@ -359,8 +390,8 @@ impl<'ttf> Plotter<'ttf> {
 		
 		let mut message_right =
 			match self.mode{
-				Mode::Edit_Route 	=> "Mode Edit Route".to_string(),
-				Mode::Edit_Waypoint => "Mode Edit Waypoint".to_string(),
+				Mode::EditRoute 	=> "Mode Edit Route".to_string(),
+				Mode::EditWaypoint => "Mode Edit Waypoint".to_string(),
 				Mode::Measurement 	=> "Mode Measurement".to_string(),
 			};
 
@@ -468,8 +499,8 @@ impl<'ttf> Plotter<'ttf> {
 		//println!("Click court en ({}, {})", x, y);
 		match self.mode{
 			Mode::Measurement 	=> self.handle_click_mesure(map, x,y),
-			Mode::Edit_Route 	=> self.handle_click_edit_route(map, x,y),
-			Mode::Edit_Waypoint => self.handle_click_edit_wp(map, x, y),
+			Mode::EditRoute 	=> self.handle_click_edit_route(map, x,y),
+			Mode::EditWaypoint => self.handle_click_edit_wp(map, x, y),
 			};
 		}
 
@@ -500,8 +531,8 @@ impl<'ttf> Plotter<'ttf> {
 	fn handle_long_click(&mut self, x :i32, y: i32){
 		println!("Click long en ({}, {})", x, y);
 		match self.mode{
-			Mode::Edit_Route 	=> self.handle_long_click_edit_route(x, y),
-			Mode::Edit_Waypoint => self.handle_long_click_edit_wp(x, y),
+			Mode::EditRoute 	=> self.handle_long_click_edit_route(x, y),
+			Mode::EditWaypoint => self.handle_long_click_edit_wp(x, y),
 			Mode::Measurement 	=> {},
 			};
 		}
@@ -598,8 +629,8 @@ impl<'ttf> Plotter<'ttf> {
 	fn handle_topbar_event(&mut self, x: u32, y: u32) {
 		if let Some(name) = self.topbar.event(x, y) {
 			let action = match name.as_str() {
-				topbar::EDIT_ROUTE => Some(AppAction::SetMode(Mode::Edit_Route)),
-				topbar::EDIT_WP => Some(AppAction::SetMode(Mode::Edit_Waypoint)),
+				topbar::EDIT_ROUTE => Some(AppAction::SetMode(Mode::EditRoute)),
+				topbar::EDIT_WP => Some(AppAction::SetMode(Mode::EditWaypoint)),
 				topbar::EDIT_MESURE => Some(AppAction::SetMode(Mode::Measurement)),
 				topbar::CLEAR_ROUTE => Some(AppAction::ClearRoute),
 				topbar::FOLLOW => Some(AppAction::ToggleFollow),
@@ -628,9 +659,9 @@ impl<'ttf> Plotter<'ttf> {
 			AppAction::SetMode(mode) => self.mode = mode,
 			AppAction::CycleMode => {
 				self.mode = match self.mode {
-					Mode::Edit_Route => Mode::Edit_Waypoint,
-					Mode::Edit_Waypoint => Mode::Measurement,
-					Mode::Measurement => Mode::Edit_Route,
+					Mode::EditRoute => Mode::EditWaypoint,
+					Mode::EditWaypoint => Mode::Measurement,
+					Mode::Measurement => Mode::EditRoute,
 				};
 			}
 			AppAction::ToggleFollow => {
@@ -804,8 +835,8 @@ impl<'ttf> Plotter<'ttf> {
 				let (x, y) = (x as i32, y as i32);
 				self.mouse = Mouse::Cross;
 				match self.mode {
-					Mode::Edit_Route => self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?,
-					Mode::Edit_Waypoint => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
+					Mode::EditRoute => self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?,
+					Mode::EditWaypoint => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
 					Mode::Measurement => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
 					};
 				}
