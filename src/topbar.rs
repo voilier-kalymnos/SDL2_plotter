@@ -32,6 +32,9 @@ pub const SHOW_TRACK: &str  = "Show Track";
 pub const HIDE_TRACK: &str  = "Hide Track";
 pub const SHOW_ROUTE: &str  = "Show Route";
 pub const HIDE_ROUTE: &str  = "Hide Route";
+pub const SHOW_AIS: &str    = "Show Ais";
+pub const HIDE_AIS: &str    = "Hide Ais";
+
 const FONT_FILE: &str = "assets/Montserrat-Regular.ttf";
 const FONT_SIZE: u16 = 16;
 
@@ -96,6 +99,12 @@ impl<'ttf> Topbar<'ttf> {
                     SAVE_WP.into(),
                     SHOW_WP.into(),
                     HIDE_WP.into(),
+                    ] },
+            Menu {
+                title: "AIS",
+                entries: vec![
+                    SHOW_AIS.into(),
+                    HIDE_AIS.into(),
                     ] },
             ];
 

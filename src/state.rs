@@ -16,6 +16,7 @@ pub struct State {
     pub display_waypoint    : bool,
     pub display_route       : bool,
     pub display_track       : bool,
+    pub display_ais         : bool,
 }
 
 impl State 
@@ -42,6 +43,7 @@ impl State
                 display_waypoint: true,
                 display_route: true,
                 display_track: true,
+                display_ais : true,
                 })
             }
             Err(error) => Err(error),
