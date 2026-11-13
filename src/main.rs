@@ -89,6 +89,12 @@ enum AppAction {
 	Pan(i32, i32),
 	ZoomIn,
 	ZoomOut,
+	ShowWaypoints,
+	HideWaypoints,
+	ShowRoute,
+	HideRoute,
+	ShowTrack,
+	HideTrack,
 }
 
 struct Press {
@@ -333,7 +339,9 @@ impl<'ttf> Plotter<'ttf> {
 	    	}
 		
 		////////////////// Route display /////////////////
-		self.display_route(map);
+		if self.state.display_route {
+			self.display_route(map);
+			}
 
 		/////////////////// Boat display  /////////////////
 	    self.boat.show( &self.renderer, map);
@@ -343,10 +351,13 @@ impl<'ttf> Plotter<'ttf> {
 			.map_err(anyhow::Error::msg)?;
 
 		/////////// Display track ///////////////////////////////////////////
-	    self.track.show(&mut map.canvas, &self.renderer, Some(self.boat.position()));
-
+		if self.state.display_track {
+	    	self.track.show(&mut map.canvas, &self.renderer, Some(self.boat.position()));
+			}
 		//////////// Dispaly Waypoints ///////////////////////
-		self.waypoints.show(map, &self.renderer).map_err(anyhow::Error::msg)?;
+		if self.state.display_waypoint {
+			self.waypoints.show(map, &self.renderer).map_err(anyhow::Error::msg)?;
+			}
 
 		/////////////// Topbar display ///////////////////////
 		self.topbar.show(&mut map.canvas);
@@ -629,19 +640,25 @@ impl<'ttf> Plotter<'ttf> {
 	fn handle_topbar_event(&mut self, x: u32, y: u32) {
 		if let Some(name) = self.topbar.event(x, y) {
 			let action = match name.as_str() {
-				topbar::EDIT_ROUTE => Some(AppAction::SetMode(Mode::EditRoute)),
-				topbar::EDIT_WP => Some(AppAction::SetMode(Mode::EditWaypoint)),
-				topbar::EDIT_MESURE => Some(AppAction::SetMode(Mode::Measurement)),
-				topbar::CLEAR_ROUTE => Some(AppAction::ClearRoute),
-				topbar::FOLLOW => Some(AppAction::ToggleFollow),
-				topbar::PREVIOUS => Some(AppAction::PreviousWaypoint),
-				topbar::GOTO => Some(AppAction::ToggleGoto),
-				topbar::NEXT => Some(AppAction::NextWaypoint),
-				topbar::QUITTE => Some(AppAction::Quit),
-				topbar::CLEAR_TRACK => Some(AppAction::ClearTrack),
-				topbar::SAVE_TRACK => Some(AppAction::SaveTrack),
-				topbar::CLEAR_WP => Some(AppAction::ClearWaypoints),
-				topbar::SAVE_WP => Some(AppAction::SaveWaypoints),
+				topbar::EDIT_ROUTE 		=> Some(AppAction::SetMode(Mode::EditRoute)),
+				topbar::EDIT_WP 		=> Some(AppAction::SetMode(Mode::EditWaypoint)),
+				topbar::EDIT_MESURE 	=> Some(AppAction::SetMode(Mode::Measurement)),
+				topbar::CLEAR_ROUTE 	=> Some(AppAction::ClearRoute),
+				topbar::FOLLOW 			=> Some(AppAction::ToggleFollow),
+				topbar::PREVIOUS 		=> Some(AppAction::PreviousWaypoint),
+				topbar::GOTO 			=> Some(AppAction::ToggleGoto),
+				topbar::NEXT 			=> Some(AppAction::NextWaypoint),
+				topbar::QUITTE 			=> Some(AppAction::Quit),
+				topbar::CLEAR_TRACK 	=> Some(AppAction::ClearTrack),
+				topbar::SAVE_TRACK 		=> Some(AppAction::SaveTrack),
+				topbar::CLEAR_WP 		=> Some(AppAction::ClearWaypoints),
+				topbar::SAVE_WP 		=> Some(AppAction::SaveWaypoints),
+				topbar::SHOW_WP 		=> Some(AppAction::ShowWaypoints),
+				topbar::HIDE_WP 		=> Some(AppAction::HideWaypoints),
+				topbar::SHOW_TRACK 		=> Some(AppAction::ShowTrack),
+				topbar::HIDE_TRACK 		=> Some(AppAction::HideTrack),
+				topbar::SHOW_ROUTE 		=> Some(AppAction::ShowRoute),
+				topbar::HIDE_ROUTE 		=> Some(AppAction::HideRoute),
 				_ => self
 					.charts_name
 					.iter()
@@ -656,33 +673,33 @@ impl<'ttf> Plotter<'ttf> {
 
 	fn execute_action(&mut self, action: AppAction) {
 		match action {
-			AppAction::SetMode(mode) => self.mode = mode,
-			AppAction::CycleMode => {
+			AppAction::SetMode(mode) 		=> self.mode = mode,
+			AppAction::CycleMode 				=> {
 				self.mode = match self.mode {
 					Mode::EditRoute => Mode::EditWaypoint,
 					Mode::EditWaypoint => Mode::Measurement,
 					Mode::Measurement => Mode::EditRoute,
 				};
 			}
-			AppAction::ToggleFollow => {
+			AppAction::ToggleFollow 			=> {
 				self.state.follow = !self.state.follow;
 				self.center_map_on_visible_center();
 			}
-			AppAction::ToggleGoto => self.state.goto = !self.state.goto,
-			AppAction::ClearRoute => {
+			AppAction::ToggleGoto 				=> self.state.goto = !self.state.goto,
+			AppAction::ClearRoute 				=> {
 				self.state.goto = false;
 				self.route.clear();
 			}
-			AppAction::PreviousWaypoint => {
+			AppAction::PreviousWaypoint 		=> {
 				self.state.nav_id = self.state.nav_id.saturating_sub(1);
 			}
-			AppAction::NextWaypoint => {
+			AppAction::NextWaypoint 			=> {
 				let last = self.route.get_nb_wp().saturating_sub(1);
 				self.state.nav_id = self.state.nav_id.saturating_add(1).min(last);
 			}
-			AppAction::Quit => self.running = false,
-			AppAction::ClearTrack => self.track.reset(),
-			AppAction::SaveTrack => {
+			AppAction::Quit 					=> self.running = false,
+			AppAction::ClearTrack 				=> self.track.reset(),
+			AppAction::SaveTrack 				=> {
 				println!("Save Track");
 				let now = Local::now();
 				let path = Path::new(DEFAULT_TRACK_DIR)
@@ -692,14 +709,14 @@ impl<'ttf> Plotter<'ttf> {
 					Err(error) => eprintln!("Erreur sauvegarde : {error}"),
 				}
 			}
-			AppAction::ClearWaypoints => self.waypoints.reset(),
-			AppAction::SaveWaypoints => {
+			AppAction::ClearWaypoints 			=> self.waypoints.reset(),
+			AppAction::SaveWaypoints 			=> {
 				println!("Save Waypoints");
 				if let Err(error) = self.waypoints.save() {
 					eprintln!("Erreur sauvegarde des waypoints : {error}");
 				}
 			}
-			AppAction::ChangeChart(index) => {
+			AppAction::ChangeChart(index)=> {
 				match self.renderer.change_map(&self.charts_path[index]) {
 					Ok(()) => {
 						self.state.map = self.charts_path[index].clone();
@@ -711,7 +728,7 @@ impl<'ttf> Plotter<'ttf> {
 					),
 				}
 			}
-			AppAction::Pan(dx, dy) => {
+			AppAction::Pan(dx, dy) 	=> {
 				if self.state.follow {
 					self.state.map_offset.0 += dx;
 					self.state.map_offset.1 += dy;
@@ -720,14 +737,22 @@ impl<'ttf> Plotter<'ttf> {
 					self.state.map_offset = (0, 0);
 				}
 			}
-			AppAction::ZoomIn => {
+			AppAction::ZoomIn 					=> {
 				//self.center_map_on_visible_center();
 				self.state.zoom = self.renderer.zoom_increase(&self.state.map);
 			}
-			AppAction::ZoomOut => {
+			AppAction::ZoomOut 					=> {
 				//self.center_map_on_visible_center();
 				self.state.zoom = self.renderer.zoom_decrease();
-			}
+				}
+			AppAction::HideWaypoints 			=> self.state.display_waypoint = false,
+			AppAction::ShowWaypoints			=> self.state.display_waypoint = true,
+			AppAction::HideRoute	 			=> self.state.display_route = false,
+			AppAction::ShowRoute				=> self.state.display_route = true,
+			AppAction::HideTrack				=> self.state.display_track = false,
+			AppAction::ShowTrack				=> self.state.display_track = true,
+
+
 		}
 		self.dirty = true;
 	}
@@ -761,17 +786,27 @@ impl<'ttf> Plotter<'ttf> {
 			//println!("Handle mouse up {} {}",x,y);
 			if let Some(p) = self.press.take(){ // fin du deplacement de la carte
 				if p.moved{
-					println!("finish drag map");
 					if self.is_draging  { // drag map
-					    let dx = x - self.drag_start.0;
-					    let dy = y - self.drag_start.1;
-					    //println!("Drag terminé, déplacement total : ({}, {})", dx, dy);
-					    self.dirty = true;
-					    self.is_draging = false;
-					    self.execute_action(AppAction::Pan(dx, dy));
+						println!("finish drag map");
+						let dx = x - self.drag_start.0;
+						let dy = y - self.drag_start.1;
+						//println!("Drag terminé, déplacement total : ({}, {})", dx, dy);
+						self.dirty = true;
+						self.is_draging = false;
+						self.execute_action(AppAction::Pan(dx, dy));
 						self.mouse = Mouse::Cross;
-					    }
+					} else {
+						match self.mode {
+							Mode::EditRoute => self.route.save(),
+							Mode::EditWaypoint => {
+								if let Err(error) = self.waypoints.save() {
+									eprintln!("Erreur sauvegarde des waypoints : {error}");
+								}
+							}
+							Mode::Measurement => {}
+						}
 					}
+				}
 				else if  !p.long_fired {
 					self.handle_short_click(map, x, y);
 					}
@@ -817,6 +852,43 @@ impl<'ttf> Plotter<'ttf> {
 		Ok(())
 		}
 		
+	fn handle_mouse_motion_edit_waypoint(
+			&mut self, 
+			x: i32, 
+			y: i32, 
+			xrel: i32, 
+			yrel: i32,
+			map: &mut screen::Map<'_>,
+			texture: &sdl2::render::Texture,) -> Result<(), String>{
+		self.selected = self.waypoints.find_point_at(&self.renderer, (x, y), 8);
+
+		if self.selected.is_some() {
+			println!("selected wp : {:?}", self.selected);
+			self.mouse = Mouse::Move;
+			}
+
+		if let Some(p) = self.press.as_mut() {
+				if let Some(i) = self.selected { // il y un waypoint sous la souris
+					if !p.moved{
+						p.moved = true;
+						}
+					if p.moved  {// deplacement du waypoint avec la souris
+						let dx = map.screen_width as i32 / 2 - x;
+						let dy = map.screen_height as i32 / 2 - y;
+						self.mouse = Mouse::Move;
+						let (lon, lat) = self.renderer.screen_to_gps(dx , dy);
+						self.waypoints.modify(i, (lon, lat));
+						self.dirty = true;
+						println!("Move waypoint {:?}",self.selected);
+						}
+					}
+			else{
+				self.handle_move_map(x, y, xrel, yrel, map, texture)?;
+				}
+			}
+		Ok(())
+		}
+
 	fn handle_mouse_motion(
 		&mut self,
 		x: u32,
@@ -835,9 +907,9 @@ impl<'ttf> Plotter<'ttf> {
 				let (x, y) = (x as i32, y as i32);
 				self.mouse = Mouse::Cross;
 				match self.mode {
-					Mode::EditRoute => self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?,
-					Mode::EditWaypoint => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
-					Mode::Measurement => self.handle_move_map(x, y, xrel, yrel, map, texture)?,
+					Mode::EditRoute 	=> self.handle_mouse_motion_edit_route(x, y, xrel, yrel, map, texture)?,
+					Mode::EditWaypoint 	=> self.handle_mouse_motion_edit_waypoint(x, y, xrel, yrel, map, texture)?,
+					Mode::Measurement 	=> self.handle_move_map(x, y, xrel, yrel, map, texture)?,
 					};
 				}
 			Ok(())

@@ -130,6 +130,7 @@ impl Waypoints {
         fs::write(path, json)?;
         Ok(())
     }
+
 }
 
 #[cfg(test)]

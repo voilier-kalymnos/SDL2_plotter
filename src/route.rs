@@ -75,52 +75,44 @@ impl Route
 		self.show_route_since_id(renderer, map,mode, id);
 		}
 	
-	pub fn show_route_len(&self) -> String
-		{
+	pub fn show_route_len(&self) -> String{
 		format!("route : {:.1} Mn", self.longueur)
 		}
 			
-	pub fn save(&mut self) 
-		{
+	pub fn save(&mut self) {
 		match gpx::save_gpx("route.gpx", "Plotter", &self.track) {
 						Ok(())  => println!("route sauvée : {} points", self.track.len()),
 						Err(e)  => eprintln!("erreur de sauvegarde : {e}"),
 						}
 		}
 		
-	pub fn clear(&mut self)
-		{
+	pub fn clear(&mut self){
 		self.track.clear();
 		self.longueur = 0.0;
 		self.save();
 		}
 		
-	pub fn remove(&mut self, i:usize) 
-		{
+	pub fn remove(&mut self, i:usize) {
 		self.track.remove(i);
 		self.calc_route();
 		}
 		
-	pub fn modify(&mut self, i:usize, longitude:f64, latitude:f64) 
-		{
+	pub fn modify(&mut self, i:usize, longitude:f64, latitude:f64) {
 		self.track[i] = (longitude, latitude);
 		self.calc_route();
 		}
 		
-	pub fn add(&mut self, longitude:f64, latitude:f64) 
-		{
+	pub fn add(&mut self, longitude:f64, latitude:f64) {
 		self.track.push((longitude,latitude));
 		self.calc_route();
 		}
 		
-	pub fn insert (&mut self, i:usize, longitude:f64, latitude:f64) 
-		{
+	pub fn insert (&mut self, i:usize, longitude:f64, latitude:f64) {
 		self.track.insert(i+1,(longitude,latitude));
 		self.calc_route();
 		}
 		
-	pub fn calc_route(&mut self) 
-		{
+	pub fn calc_route(&mut self) {
 		self.distance.clear();
 
 		for w in self.track.windows(2) 
@@ -142,8 +134,7 @@ impl Route
 			}
 		}
 		
-	pub fn calc_route_mn_from_boat(&mut self, id :usize, boat :(f64,f64)) -> (f64,f64,f64)
-		{
+	pub fn calc_route_mn_from_boat(&mut self, id :usize, boat :(f64,f64)) -> (f64,f64,f64){
 		let (dist_wp, bearing_wp) = gps::distance_bearing_wp(boat, self.track[id]);
 		let dist_total = dist_wp + self.restante[id];
 		(dist_wp, bearing_wp, dist_total)
@@ -204,8 +195,7 @@ impl Route
 		Some(self.track[id.min(last)])
 		}
 	*/
-	pub fn get_nb_wp(&self) -> usize
-		{
+	pub fn get_nb_wp(&self) -> usize{
 		self.track.len()
 		}
 	}

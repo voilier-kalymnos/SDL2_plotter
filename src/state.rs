@@ -6,13 +6,16 @@ use std::{fs, path::Path};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct State {
     #[serde(default)]
-    pub follow		: bool,
-    pub goto		: bool,
-    pub map			: String,
-    pub position    : Option<(f64, f64)>,
-    pub zoom		: i32,
-    pub map_offset  : (i32,i32),
-    pub nav_id      : usize,
+    pub follow		        : bool,
+    pub goto		        : bool,
+    pub map			        : String,
+    pub position            : Option<(f64, f64)>,
+    pub zoom		        : i32,
+    pub map_offset          : (i32,i32),
+    pub nav_id              : usize,
+    pub display_waypoint    : bool,
+    pub display_route       : bool,
+    pub display_track       : bool,
 }
 
 impl State 
@@ -36,6 +39,9 @@ impl State
                 zoom: 8,
                 map_offset: (0,0),
                 nav_id: 0,
+                display_waypoint: true,
+                display_route: true,
+                display_track: true,
                 })
             }
             Err(error) => Err(error),

@@ -26,7 +26,12 @@ pub const CLEAR_TRACK: &str = "Clear Track";
 pub const SAVE_TRACK: &str  = "Save Track";
 pub const CLEAR_WP: &str    = "Clear Waypoint";
 pub const SAVE_WP: &str     = "Save Waypoint";
-
+pub const SHOW_WP: &str     = "Show Waypoint";
+pub const HIDE_WP: &str     = "Hide Waypoint";
+pub const SHOW_TRACK: &str  = "Show Track";
+pub const HIDE_TRACK: &str  = "Hide Track";
+pub const SHOW_ROUTE: &str  = "Show Route";
+pub const HIDE_ROUTE: &str  = "Hide Route";
 const FONT_FILE: &str = "assets/Montserrat-Regular.ttf";
 const FONT_SIZE: u16 = 16;
 
@@ -73,18 +78,24 @@ impl<'ttf> Topbar<'ttf> {
                     GOTO.into(),
                     PREVIOUS.into(),
                     NEXT.into(),
+                    SHOW_ROUTE.into(),
+                    HIDE_ROUTE.into(),
                     ] },
             Menu {
                 title: "Track",
                 entries: vec![
                     CLEAR_TRACK.into(),
                     SAVE_TRACK.into(),
+                    SHOW_TRACK.into(),
+                    HIDE_TRACK.into(),
                     ] },
             Menu {
                 title: "Waypoints",
                 entries: vec![
                     CLEAR_WP.into(),
                     SAVE_WP.into(),
+                    SHOW_WP.into(),
+                    HIDE_WP.into(),
                     ] },
             ];
 

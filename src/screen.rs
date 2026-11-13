@@ -95,8 +95,7 @@ impl<'ttf> Map<'ttf> {
         Ok(Map { font, canvas, screen_width, screen_height, cursor_hand, cursor_cross, cursor_arrow, cursor_wait, cursor_size })
         }
 
-    pub fn draw_mid_handles(&mut self, pts: &[Point]) 
-        {
+    pub fn draw_mid_handles(&mut self, pts: &[Point])  {
         self.canvas.set_draw_color(ROUTE_COLOR);
         for p in pts 
             {
@@ -122,8 +121,7 @@ impl<'ttf> Map<'ttf> {
         Ok(())
         }
     
-    pub fn show_route(&mut self, pts: &[Point]) 
-        {
+    pub fn show_route(&mut self, pts: &[Point])  {
         for seg in pts.windows(2) 
             {
             let (a, b) = (&seg[0], &seg[1]);
