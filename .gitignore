@@ -1,3 +1,7 @@
 /target/
 /map/
 *.mbtiles
+plotter.log
+route.gpx
+state.json
+waypoints
