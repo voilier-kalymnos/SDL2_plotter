@@ -122,10 +122,13 @@ impl SignalKClient {
                                     if self.self_context.is_none() {
                                         eprintln!("Le serveur Signal K n'a pas fourni le contexte du bateau (self)");
                                     }
-                                    println!("connection ok");
+                                    crate::diagnostics::record("INFO", "Identification SignalK réussie");
                                     return true
                                 }
-                                else                            {  println!("connection failed"); return false }  
+                                else {
+                                    crate::diagnostics::record("WARN", "Réponse initiale SignalK inattendue");
+                                    return false
+                                }
                                 }
                         }
                     }
@@ -159,7 +162,7 @@ impl SignalKClient {
             //min_period: u32,
         }
      
-        println!("subscribe path à Signalk");
+        crate::diagnostics::record("INFO", "Souscription SignalK aux données bateau et AIS");
         let deltas: Vec<Delta> = SUBSCRIBED_PATHS
             .iter()
             .map(|path| Delta {
@@ -311,6 +314,10 @@ async fn wait_for_signalk_connection(url: &str) -> WsStream {
         attempt += 1;
         match connect_async(url).await {
             Ok((ws_stream, response)) => {
+                crate::diagnostics::record(
+                    "INFO",
+                    format!("Connexion SignalK établie après {attempt} tentative(s), status {}", response.status()),
+                );
                 println!(
                     "Connecté à SignalK après {} tentative(s) (status: {})",
                     attempt,
@@ -326,11 +333,12 @@ async fn wait_for_signalk_connection(url: &str) -> WsStream {
                     .and_then(|v| v.parse::<u64>().ok())
                     .unwrap_or_else(|| (2u64.pow(attempt.min(5))).min(60));
 
+                crate::diagnostics::record("WARN", format!("SignalK HTTP 429: attente {wait}s (tentative {attempt})"));
                 eprintln!("429 recu, attente de {}s (tentative {})", wait, attempt);
                 tokio::time::sleep(Duration::from_secs(wait)).await;
             }
-            Err(_e) => {
-                //~ eprintln!("chec de connexion (tentative {}): {}", attempt, e);
+            Err(error) => {
+                crate::diagnostics::record("WARN", format!("Connexion SignalK échouée (tentative {attempt}): {error}"));
                 let delay = Duration::from_secs((attempt.min(10)) as u64);
                 tokio::time::sleep(delay).await;
             }
@@ -348,13 +356,18 @@ pub async fn signalk_task(
     ais_tx: watch::Sender<Vec<AisTarget>>,
     status_tx: watch::Sender<String>,
 ) {
+    crate::diagnostics::record("INFO", format!("Tâche SignalK démarrée, serveur={SIGNALK_URL}"));
     let _ = status_tx.send(format!("Connecting to Signalk {}...", SIGNALK_URL));
     let mut signalk = SignalKClient::connect().await;
-    let _ = signalk.check_connect().await;
+    if !signalk.check_connect().await {
+        crate::diagnostics::record("WARN", "La vérification initiale SignalK n'a pas abouti");
+    }
 
     loop {
         let _ = status_tx.send("Signalk Subscribe...".to_string());
-        let _ = signalk.subscribe().await;
+        if let Err(error) = signalk.subscribe().await {
+            crate::diagnostics::record("ERROR", format!("Échec de souscription SignalK: {error}"));
+        }
 
         let _ = status_tx.send("Load Map...".to_string());
         // boucle normale de reception des deltas signalk
@@ -374,6 +387,7 @@ pub async fn signalk_task(
         }
 
         let _ = status_tx.send("Try to reconnect...".to_string());
+        crate::diagnostics::record("WARN", "Connexion SignalK interrompue, reconnexion");
         signalk.reconnect().await;
     }
 }

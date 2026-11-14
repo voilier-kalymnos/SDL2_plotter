@@ -1,15 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="boat-tracker" xmlns="http://www.topografix.com/GPX/1/1">
   <trk>
-    <name>Track 2026-11-14 11:12:09</name>
+    <name>Track 2026-11-15 07:38:15</name>
     <trkseg>
-      <trkpt lat="-18.279803" lon="177.746760"/>
-      <trkpt lat="-18.274298" lon="177.739274"/>
-      <trkpt lat="-18.268868" lon="177.732124"/>
-      <trkpt lat="-18.265398" lon="177.726467"/>
-      <trkpt lat="-18.259293" lon="177.717539"/>
-      <trkpt lat="-18.255098" lon="177.709085"/>
-      <trkpt lat="-18.253067" lon="177.706611"/>
+      <trkpt lat="-18.136832" lon="177.417864"/>
+      <trkpt lat="-18.137048" lon="177.417698"/>
+      <trkpt lat="-18.136968" lon="177.417868"/>
     </trkseg>
   </trk>
 </gpx>

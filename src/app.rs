@@ -20,6 +20,8 @@ const DEFAULT_TRACK_DIR: &str	= "track/";
 const DEFAULT_TRACK_PATH: &str	= "track/default.gpx";
 const LONG_CLICK: Duration 		= Duration::from_millis(500);
 const MOVE_TOLERANCE: i32 		= 5;
+const TRACK_CHECKPOINT_INTERVAL: Duration = Duration::from_secs(15);
+const DIAGNOSTICS_INTERVAL: Duration = Duration::from_secs(10);
 
 fn valid_boat_position(boat: &BoatState) -> bool {
 	boat.position_valid
@@ -54,6 +56,37 @@ enum AppAction {
 	HideTrack,
 	ShowAis,
 	HideAis
+}
+
+impl AppAction {
+	fn name(&self) -> &'static str {
+		match self {
+			Self::SetMode(_) => "SetMode",
+			Self::CycleMode => "CycleMode",
+			Self::ToggleFollow => "ToggleFollow",
+			Self::ToggleGoto => "ToggleGoto",
+			Self::ClearRoute => "ClearRoute",
+			Self::PreviousWaypoint => "PreviousWaypoint",
+			Self::NextWaypoint => "NextWaypoint",
+			Self::Quit => "Quit",
+			Self::ClearTrack => "ClearTrack",
+			Self::SaveTrack => "SaveTrack",
+			Self::ClearWaypoints => "ClearWaypoints",
+			Self::SaveWaypoints => "SaveWaypoints",
+			Self::ChangeChart(_) => "ChangeChart",
+			Self::Pan(_, _) => "Pan",
+			Self::ZoomIn => "ZoomIn",
+			Self::ZoomOut => "ZoomOut",
+			Self::ShowWaypoints => "ShowWaypoints",
+			Self::HideWaypoints => "HideWaypoints",
+			Self::ShowRoute => "ShowRoute",
+			Self::HideRoute => "HideRoute",
+			Self::ShowTrack => "ShowTrack",
+			Self::HideTrack => "HideTrack",
+			Self::ShowAis => "ShowAis",
+			Self::HideAis => "HideAis",
+		}
+	}
 }
 
 struct Press {
@@ -105,6 +138,8 @@ pub(crate) struct Plotter<'ttf> {
 	mouse: Mouse,
 	state_rx: watch::Receiver<BoatState>,
     track_rx: tokio::sync::mpsc::UnboundedReceiver<(f64, f64)>,
+    track_save_pending: bool,
+    last_track_save: Instant,
     ais_rx: watch::Receiver<Vec<ais::AisTarget>>,
 	#[allow(dead_code)]
     status_rx: watch::Receiver<String>,
@@ -161,6 +196,10 @@ impl<'ttf> Plotter<'ttf> {
 		let route  		= route::Route::new().map_err(anyhow::Error::msg)?;
 		let mesure 		= mesure::Mesure::new().map_err(anyhow::Error::msg)?;
 		let track    	= track::Track::new(Path::new(DEFAULT_TRACK_PATH))?;
+		crate::diagnostics::record(
+			"INFO",
+			format!("Trace initialisée: {} points dans {}", track.point_count(), DEFAULT_TRACK_PATH),
+		);
 		let waypoints= waypoints::Waypoints::new()?;
 
 
@@ -189,6 +228,8 @@ impl<'ttf> Plotter<'ttf> {
 					mouse: Mouse::Hand,
 					state_rx, 
 					track_rx, 
+					track_save_pending: false,
+					last_track_save: Instant::now(),
 					ais_rx, 
 					status_rx,
 					ais_targets: Vec::new(),
@@ -203,19 +244,69 @@ impl<'ttf> Plotter<'ttf> {
 			texture: &mut sdl2::render::Texture,
 			pitch: usize,
 		) -> anyhow::Result<()> {
+		let mut last_diagnostics = Instant::now();
+		let mut loop_count: u64 = 0;
+		let mut event_count: u64 = 0;
+		let mut track_updates: u64 = 0;
+		let mut rendered_frames: u64 = 0;
+		let mut last_input = Instant::now();
+		crate::diagnostics::record("INFO", "Boucle SDL démarrée");
 		while self.running {
+			let loop_started = Instant::now();
+			if last_diagnostics.elapsed() >= DIAGNOSTICS_INTERVAL {
+				crate::diagnostics::record(
+					"INFO",
+					format!(
+						"État boucle: iterations={loop_count}, événements={event_count}, points ajoutés={track_updates}, images rendues={rendered_frames}, points trace={}, sauvegarde en attente={}, dernier événement utilisateur il y a {:?}",
+						self.track.point_count(),
+						self.track_save_pending,
+						last_input.elapsed()
+					),
+				);
+				last_diagnostics = Instant::now();
+			}
 
 			/////////////////////   Event /////////////////////////
 			for event in event_pump.poll_iter() {
+				event_count += 1;
+				if matches!(
+					&event,
+					Event::KeyDown { .. }
+						| Event::TextInput { .. }
+						| Event::MouseButtonDown { .. }
+						| Event::MouseButtonUp { .. }
+						| Event::MouseMotion { .. }
+						| Event::MouseWheel { .. }
+				) {
+					last_input = Instant::now();
+				}
+				let event_started = Instant::now();
 				self.match_event(event, map, texture)
-					.map_err(anyhow::Error::msg)?;
+					.map_err(|error| {
+						crate::diagnostics::record("ERROR", format!("Erreur de traitement SDL: {error}"));
+						anyhow::Error::msg(error)
+					})?;
+				let elapsed = event_started.elapsed();
+				if elapsed >= Duration::from_millis(500) {
+					crate::diagnostics::record("WARN", format!("Traitement d'un événement SDL lent: {elapsed:?}"));
+				}
 				}
 			
 			////////////////////// Track update ///////////////////////
 			while let Ok(position) = self.track_rx.try_recv() {
-				self.track.add(position);
-				self.dirty = true;
+				if self.track.add(position) {
+					track_updates += 1;
+					self.track_save_pending = true;
+					self.dirty = true;
+					if self.track.point_count() == 1 {
+						self.save_default_track();
+					}
 				}
+				}
+
+			if self.track_save_pending && self.last_track_save.elapsed() >= TRACK_CHECKPOINT_INTERVAL {
+				self.save_default_track();
+			}
 
 			//////////////////////   Position update  /////////////////////////
 			if self.state_rx.has_changed()? {
@@ -251,7 +342,13 @@ impl<'ttf> Plotter<'ttf> {
 					}
 			//////////////////////   Display /////////////////////////
 			if self.dirty && !self.is_draging {
+				let display_started = Instant::now();
 				self.display(map, texture, pitch).map_err(anyhow::Error::msg)?;
+				rendered_frames += 1;
+				let elapsed = display_started.elapsed();
+				if elapsed >= Duration::from_millis(500) {
+					crate::diagnostics::record("WARN", format!("Rendu lent: {elapsed:?}"));
+				}
 				self.dirty = false;
 				}
 			
@@ -259,21 +356,62 @@ impl<'ttf> Plotter<'ttf> {
 			self.mouse(map);
 
 			/////////////// preload tiles on the edge ///////////////////////////
+			let prefetch_started = Instant::now();
 			self.renderer.prefetch_step(8);
+			let elapsed = prefetch_started.elapsed();
+			if elapsed >= Duration::from_millis(500) {
+				crate::diagnostics::record("WARN", format!("Préchargement des tuiles lent: {elapsed:?}"));
+			}
 
 			/////// Sleep to limit CPU usage /////////////////////////
 			std::thread::sleep(Duration::from_millis(16));
+			loop_count += 1;
+			let elapsed = loop_started.elapsed();
+			if elapsed >= Duration::from_secs(1) {
+				crate::diagnostics::record("WARN", format!("Itération principale lente: {elapsed:?}"));
+			}
 			} // end while self.running
 
-			match self.track.save(Path::new(DEFAULT_TRACK_PATH)) {
-						Ok(()) => 	{
-									println!("Trace sauvegardée");
-									},
-						Err(e) => eprintln!("Erreur sauvegarde : {e}"),
-						}
-			let _ = self.state.save(STATE_FILE);
+			crate::diagnostics::record("INFO", "Arrêt demandé, sauvegarde finale de la trace");
+			self.save_default_track();
+			if let Err(error) = self.state.save(STATE_FILE) {
+				crate::diagnostics::record("ERROR", format!("Erreur sauvegarde état: {error}"));
+			}
+			crate::diagnostics::record("INFO", "Boucle SDL terminée");
 			Ok(())
 			}
+
+	fn save_default_track(&mut self) {
+		self.last_track_save = Instant::now();
+		crate::diagnostics::record(
+			"INFO",
+			format!("Sauvegarde de la trace démarrée: {} points vers {}", self.track.point_count(), DEFAULT_TRACK_PATH),
+		);
+		if self.track.point_count() == 0 {
+			if self.track_save_pending {
+				match std::fs::remove_file(DEFAULT_TRACK_PATH) {
+					Ok(()) => crate::diagnostics::record("INFO", "Trace vide supprimée après effacement"),
+					Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+					Err(error) => {
+						crate::diagnostics::record("ERROR", format!("Impossible de supprimer la trace effacée: {error}"));
+						return;
+					}
+				}
+				self.track_save_pending = false;
+			}
+			return;
+		}
+		match self.track.save(Path::new(DEFAULT_TRACK_PATH)) {
+			Ok(()) => {
+				self.track_save_pending = false;
+				crate::diagnostics::record("INFO", "Trace sauvegardée avec succès");
+			}
+			Err(error) => {
+				crate::diagnostics::record("ERROR", format!("Erreur sauvegarde trace: {error}"));
+				eprintln!("Erreur sauvegarde : {error}");
+			}
+		}
+	}
 
 	fn display(&mut self, map: &mut screen::Map<'_>, texture: &mut sdl2::render::Texture, pitch: usize) -> anyhow::Result<()> {
 		
@@ -636,20 +774,24 @@ impl<'ttf> Plotter<'ttf> {
 	}
 
 	fn execute_action(&mut self, action: AppAction) {
+		crate::diagnostics::record("DEBUG", format!("Action: {}", action.name()));
 		match action {
 			AppAction::SetMode(mode) 		=> self.mode = mode,
 			AppAction::CycleMode 				=> {
-				self.mode = match self.mode {
-					Mode::EditRoute => Mode::EditWaypoint,
-					Mode::EditWaypoint => Mode::Measurement,
-					Mode::Measurement => Mode::EditRoute,
-				};
-			}
+													self.mode = match self.mode {
+															Mode::EditRoute => Mode::EditWaypoint,
+															Mode::EditWaypoint => Mode::Measurement,
+															Mode::Measurement => Mode::EditRoute,
+														};
+													}
 			AppAction::ToggleFollow 			=> {
-				self.state.follow = !self.state.follow;
-				self.center_map_on_visible_center();
-			}
-			AppAction::ToggleGoto 				=> self.state.goto = !self.state.goto,
+													self.state.follow = !self.state.follow;
+													self.center_map_on_visible_center();
+													}
+			AppAction::ToggleGoto 				=> {
+													self.state.goto = !self.state.goto;
+													self.state.nav_id = 0;
+													}
 			AppAction::ClearRoute 				=> {
 				self.state.goto = false;
 				self.route.clear();
@@ -662,7 +804,10 @@ impl<'ttf> Plotter<'ttf> {
 				self.state.nav_id = self.state.nav_id.saturating_add(1).min(last);
 			}
 			AppAction::Quit 					=> self.running = false,
-			AppAction::ClearTrack 				=> self.track.reset(),
+			AppAction::ClearTrack 				=> {
+				self.track.reset();
+				self.track_save_pending = true;
+			}
 			AppAction::SaveTrack 				=> {
 				println!("Save Track");
 				let now = Local::now();
@@ -787,12 +932,15 @@ impl<'ttf> Plotter<'ttf> {
 			yrel: i32,
 			map: &mut screen::Map<'_>,
 			texture: &sdl2::render::Texture,) -> Result<(), String>{
-		self.selected = self.route.find_point_at(&self.renderer, (x, y), 8);
+				let previous_selection = self.selected;
+				self.selected = self.route.find_point_at(&self.renderer, (x, y), 8);
 
-		if self.selected.is_some() {
-			println!("selected : {:?}", self.selected);
-			self.mouse = Mouse::Move;
-			}
+				if self.selected.is_some() {
+					if self.selected != previous_selection {
+						crate::diagnostics::record("DEBUG", format!("Sélection route modifiée: {:?}", self.selected));
+					}
+					self.mouse = Mouse::Move;
+					}
 		if self.route.find_midpoint_at(&self.renderer, (x, y), 8).is_some(){
 			self.mouse = Mouse::Arrow
 			}
@@ -808,7 +956,6 @@ impl<'ttf> Plotter<'ttf> {
 						let (lon, lat) = self.renderer.screen_to_gps(dx , dy);
 						self.route.modify(i, lon, lat);
 						self.dirty = true;
-						println!("Deplace un point {:?}",self.selected);
 						}
 					}
 			else{
@@ -826,12 +973,15 @@ impl<'ttf> Plotter<'ttf> {
 			yrel: i32,
 			map: &mut screen::Map<'_>,
 			texture: &sdl2::render::Texture,) -> Result<(), String>{
-		self.selected = self.waypoints.find_point_at(&self.renderer, (x, y), 8);
+				let previous_selection = self.selected;
+				self.selected = self.waypoints.find_point_at(&self.renderer, (x, y), 8);
 
-		if self.selected.is_some() {
-			println!("selected wp : {:?}", self.selected);
-			self.mouse = Mouse::Move;
-			}
+				if self.selected.is_some() {
+					if self.selected != previous_selection {
+						crate::diagnostics::record("DEBUG", format!("Sélection waypoint modifiée: {:?}", self.selected));
+					}
+					self.mouse = Mouse::Move;
+					}
 
 		if let Some(p) = self.press.as_mut() {
 				if let Some(i) = self.selected { // il y un waypoint sous la souris
@@ -845,7 +995,6 @@ impl<'ttf> Plotter<'ttf> {
 						let (lon, lat) = self.renderer.screen_to_gps(dx , dy);
 						self.waypoints.modify(i, (lon, lat));
 						self.dirty = true;
-						println!("Move waypoint {:?}",self.selected);
 						}
 					}
 			else{
@@ -944,20 +1093,47 @@ impl<'ttf> Plotter<'ttf> {
 		texture: &sdl2::render::Texture,
 	) -> Result<(), String> {
 		match &event {
-			Event::KeyDown { .. } | Event::TextInput { .. } => {
+			Event::KeyDown { keycode, repeat, .. } => {
+				crate::diagnostics::record(
+					"DEBUG",
+					format!("Événement clavier: touche={keycode:?}, répétition={repeat}"),
+				);
+				self.handle_keyboard_event(&event, map);
+			}
+			Event::TextInput { .. } => {
+				crate::diagnostics::record("DEBUG", "Événement de saisie texte");
 				//println!("Keyboard event");
 				self.handle_keyboard_event(&event, map);
 			}
-			Event::MouseButtonDown { .. }
-			| Event::MouseButtonUp { .. }
-			| Event::MouseMotion { .. }
-			| Event::MouseWheel { .. } => {
+			Event::MouseButtonDown { mouse_btn, x, y, .. } => {
+				crate::diagnostics::record("DEBUG", format!("Souris bouton enfoncé: {mouse_btn:?} ({x}, {y})"));
+				if self.pending_waypoint.is_none() {
+					self.handle_mouse_event(&event, map, texture)?;
+				}
+			}
+			Event::MouseButtonUp { mouse_btn, x, y, .. } => {
+				crate::diagnostics::record("DEBUG", format!("Souris bouton relâché: {mouse_btn:?} ({x}, {y})"));
+				if self.pending_waypoint.is_none() {
+					self.handle_mouse_event(&event, map, texture)?;
+				}
+			}
+			Event::MouseWheel { y, .. } => {
+				crate::diagnostics::record("DEBUG", format!("Molette souris: {y}"));
+				if self.pending_waypoint.is_none() {
+					self.handle_mouse_event(&event, map, texture)?;
+				}
+			}
+			Event::MouseMotion { .. } => {
 				if self.pending_waypoint.is_none() {
 					self.handle_mouse_event(&event, map, texture)?;
 				}
 			}
 			Event::Quit { .. } => {
+				crate::diagnostics::record("INFO", "Événement SDL Quit reçu");
 				self.running = false;
+			}
+			Event::Window { win_event, .. } => {
+				crate::diagnostics::record("DEBUG", format!("Événement fenêtre SDL: {win_event:?}"));
 			}
 			_ => {}
 			}

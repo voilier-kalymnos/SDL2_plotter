@@ -1,0 +1,157 @@
+2026-11-15 07:49:25.743 [INFO] Démarrage de plotter (pid=1526714, cwd=Ok("/home/pi5/Documents/Programmation/Rust/desktop_plotter"))
+2026-11-15 07:49:25.746 [INFO] SDL initialisé
+2026-11-15 07:49:25.867 [INFO] Fenêtre SDL initialisée
+2026-11-15 07:49:25.869 [INFO] Tâche SignalK démarrée, serveur=192.168.3.2
+2026-11-15 07:49:25.872 [INFO] Connexion SignalK établie après 1 tentative(s), status 101 Switching Protocols
+2026-11-15 07:49:25.873 [INFO] Identification SignalK réussie
+2026-11-15 07:49:25.873 [INFO] Souscription SignalK aux données bateau et AIS
+2026-11-15 07:49:26.022 [INFO] Trace initialisée: 3 points dans track/default.gpx
+2026-11-15 07:49:26.023 [INFO] Application initialisée
+2026-11-15 07:49:26.023 [INFO] Boucle SDL démarrée
+2026-11-15 07:49:26.023 [DEBUG] Événement fenêtre SDL: Shown
+2026-11-15 07:49:26.023 [DEBUG] Événement fenêtre SDL: Hidden
+2026-11-15 07:49:26.023 [DEBUG] Événement fenêtre SDL: Shown
+2026-11-15 07:49:26.023 [DEBUG] Événement fenêtre SDL: Exposed
+2026-11-15 07:49:26.023 [DEBUG] Événement fenêtre SDL: Enter
+2026-11-15 07:49:26.631 [WARN] Rendu lent: 607.924201ms
+2026-11-15 07:49:26.669 [DEBUG] Événement fenêtre SDL: FocusGained
+2026-11-15 07:49:34.810 [DEBUG] Événement clavier: touche=Some(Keycode(9)), répétition=false
+2026-11-15 07:49:34.810 [DEBUG] Action: CycleMode
+2026-11-15 07:49:36.052 [INFO] État boucle: iterations=92, événements=27, points ajoutés=0, images rendues=33, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 247.542237ms
+2026-11-15 07:49:37.038 [DEBUG] Sélection route modifiée: Some(1)
+2026-11-15 07:49:38.043 [DEBUG] Souris bouton enfoncé: Left (438, 485)
+2026-11-15 07:49:40.344 [DEBUG] Souris bouton relâché: Left (457, 495)
+2026-11-15 07:49:46.286 [INFO] État boucle: iterations=197, événements=213, points ajoutés=0, images rendues=70, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 246.736788ms
+2026-11-15 07:49:46.790 [DEBUG] Souris bouton enfoncé: Left (786, 631)
+2026-11-15 07:49:47.405 [DEBUG] Souris bouton relâché: Left (904, 687)
+2026-11-15 07:49:47.405 [DEBUG] Action: Pan
+2026-11-15 07:49:48.151 [DEBUG] Sélection route modifiée: Some(1)
+2026-11-15 07:49:48.791 [DEBUG] Souris bouton enfoncé: Left (318, 362)
+2026-11-15 07:49:49.239 [DEBUG] Souris bouton relâché: Left (656, 668)
+2026-11-15 07:49:49.239 [DEBUG] Action: Pan
+2026-11-15 07:49:50.481 [DEBUG] Souris bouton enfoncé: Left (501, 419)
+2026-11-15 07:49:51.137 [DEBUG] Souris bouton relâché: Left (443, 522)
+2026-11-15 07:49:51.137 [DEBUG] Action: Pan
+2026-11-15 07:49:56.288 [INFO] État boucle: iterations=420, événements=430, points ajoutés=0, images rendues=98, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 5.150447513s
+2026-11-15 07:49:56.336 [DEBUG] Molette souris: 1
+2026-11-15 07:49:57.099 [WARN] Rendu lent: 762.547356ms
+2026-11-15 07:49:57.136 [DEBUG] Molette souris: 1
+2026-11-15 07:49:57.900 [WARN] Rendu lent: 763.58264ms
+2026-11-15 07:49:58.707 [DEBUG] Souris bouton enfoncé: Left (362, 328)
+2026-11-15 07:49:59.338 [DEBUG] Souris bouton relâché: Left (1235, 841)
+2026-11-15 07:49:59.338 [DEBUG] Action: Pan
+2026-11-15 07:49:59.338 [DEBUG] Événement fenêtre SDL: Leave
+2026-11-15 07:50:00.348 [DEBUG] Événement fenêtre SDL: Enter
+2026-11-15 07:50:01.506 [DEBUG] Sélection route modifiée: Some(4)
+2026-11-15 07:50:02.116 [DEBUG] Souris bouton enfoncé: Left (750, 583)
+2026-11-15 07:50:04.103 [DEBUG] Souris bouton relâché: Left (719, 570)
+2026-11-15 07:50:05.137 [DEBUG] Sélection route modifiée: Some(5)
+2026-11-15 07:50:05.987 [DEBUG] Souris bouton enfoncé: Left (1527, 371)
+2026-11-15 07:50:06.560 [INFO] État boucle: iterations=486, événements=679, points ajoutés=0, images rendues=124, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 289.588847ms
+2026-11-15 07:50:09.697 [DEBUG] Souris bouton relâché: Left (1536, 381)
+2026-11-15 07:50:16.485 [DEBUG] Souris bouton enfoncé: Left (604, 559)
+2026-11-15 07:50:16.817 [INFO] État boucle: iterations=604, événements=745, points ajoutés=0, images rendues=155, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 332.428598ms
+2026-11-15 07:50:17.279 [DEBUG] Souris bouton relâché: Left (305, 205)
+2026-11-15 07:50:17.279 [DEBUG] Action: Pan
+2026-11-15 07:50:20.474 [DEBUG] Événement clavier: touche=Some(Keycode(1073741910)), répétition=false
+2026-11-15 07:50:20.475 [DEBUG] Action: ZoomOut
+2026-11-15 07:50:20.475 [DEBUG] Événement de saisie texte
+2026-11-15 07:50:21.464 [DEBUG] Événement clavier: touche=Some(Keycode(1073741910)), répétition=false
+2026-11-15 07:50:21.465 [DEBUG] Action: ZoomOut
+2026-11-15 07:50:21.465 [DEBUG] Événement de saisie texte
+2026-11-15 07:50:27.021 [INFO] État boucle: iterations=732, événements=811, points ajoutés=0, images rendues=187, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 5.556235725s
+2026-11-15 07:50:29.270 [DEBUG] Événement fenêtre SDL: Leave
+2026-11-15 07:50:29.514 [DEBUG] Événement fenêtre SDL: Enter
+2026-11-15 07:50:29.798 [DEBUG] Événement fenêtre SDL: Leave
+2026-11-15 07:50:30.786 [DEBUG] Événement fenêtre SDL: FocusLost
+2026-11-15 07:50:37.236 [INFO] État boucle: iterations=862, événements=831, points ajoutés=0, images rendues=223, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 7.437879765s
+2026-11-15 07:50:47.278 [INFO] État boucle: iterations=1004, événements=831, points ajoutés=0, images rendues=258, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 17.480041929s
+2026-11-15 07:50:57.283 [INFO] État boucle: iterations=1136, événements=831, points ajoutés=0, images rendues=293, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 27.485153516s
+2026-11-15 07:51:07.497 [INFO] État boucle: iterations=1275, événements=831, points ajoutés=0, images rendues=329, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 37.698864872s
+2026-11-15 07:51:17.504 [INFO] État boucle: iterations=1410, événements=831, points ajoutés=0, images rendues=364, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 47.705993237s
+2026-11-15 07:51:27.511 [INFO] État boucle: iterations=1549, événements=831, points ajoutés=0, images rendues=399, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 57.713641037s
+2026-11-15 07:51:37.512 [INFO] État boucle: iterations=1679, événements=831, points ajoutés=0, images rendues=434, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 67.713941667s
+2026-11-15 07:51:47.514 [INFO] État boucle: iterations=1802, événements=831, points ajoutés=0, images rendues=469, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 77.715951849s
+2026-11-15 07:51:57.521 [INFO] État boucle: iterations=1940, événements=831, points ajoutés=0, images rendues=504, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 87.723390987s
+2026-11-15 07:52:07.535 [INFO] État boucle: iterations=2074, événements=831, points ajoutés=0, images rendues=539, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 97.737093682s
+2026-11-15 07:52:17.767 [INFO] État boucle: iterations=2203, événements=831, points ajoutés=0, images rendues=575, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 107.968938493s
+2026-11-15 07:52:27.793 [INFO] État boucle: iterations=2339, événements=831, points ajoutés=0, images rendues=610, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 117.995254914s
+2026-11-15 07:52:37.995 [INFO] État boucle: iterations=2479, événements=831, points ajoutés=0, images rendues=646, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 128.196996055s
+2026-11-15 07:52:48.033 [INFO] État boucle: iterations=2615, événements=831, points ajoutés=0, images rendues=681, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 138.234884418s
+2026-11-15 07:52:58.257 [INFO] État boucle: iterations=2748, événements=831, points ajoutés=0, images rendues=717, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 148.459200362s
+2026-11-15 07:53:08.258 [INFO] État boucle: iterations=2891, événements=831, points ajoutés=0, images rendues=752, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 158.459905625s
+2026-11-15 07:53:18.272 [INFO] État boucle: iterations=3032, événements=831, points ajoutés=0, images rendues=787, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 168.474065928s
+2026-11-15 07:53:28.276 [INFO] État boucle: iterations=3168, événements=831, points ajoutés=0, images rendues=822, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 178.477771587s
+2026-11-15 07:53:38.291 [INFO] État boucle: iterations=3295, événements=831, points ajoutés=0, images rendues=857, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 188.493116821s
+2026-11-15 07:53:48.301 [INFO] État boucle: iterations=3422, événements=831, points ajoutés=0, images rendues=892, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 198.503484169s
+2026-11-15 07:53:58.302 [INFO] État boucle: iterations=3551, événements=831, points ajoutés=0, images rendues=927, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 208.504115734s
+2026-11-15 07:54:08.305 [INFO] État boucle: iterations=3681, événements=831, points ajoutés=0, images rendues=962, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 218.507154792s
+2026-11-15 07:54:18.312 [INFO] État boucle: iterations=3811, événements=831, points ajoutés=0, images rendues=997, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 228.514031059s
+2026-11-15 07:54:28.315 [INFO] État boucle: iterations=3938, événements=831, points ajoutés=0, images rendues=1032, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 238.517589027s
+2026-11-15 07:54:38.322 [INFO] État boucle: iterations=4071, événements=831, points ajoutés=0, images rendues=1067, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 248.52461392s
+2026-11-15 07:54:48.330 [INFO] État boucle: iterations=4206, événements=831, points ajoutés=0, images rendues=1102, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 258.53198552s
+2026-11-15 07:54:58.343 [INFO] État boucle: iterations=4338, événements=831, points ajoutés=0, images rendues=1137, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 268.545441396s
+2026-11-15 07:55:08.358 [INFO] État boucle: iterations=4472, événements=831, points ajoutés=0, images rendues=1172, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 278.560147136s
+2026-11-15 07:55:18.370 [INFO] État boucle: iterations=4606, événements=831, points ajoutés=0, images rendues=1207, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 288.572738542s
+2026-11-15 07:55:28.374 [INFO] État boucle: iterations=4739, événements=831, points ajoutés=0, images rendues=1242, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 298.576271782s
+2026-11-15 07:55:38.385 [INFO] État boucle: iterations=4870, événements=831, points ajoutés=0, images rendues=1277, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 308.587471579s
+2026-11-15 07:55:48.400 [INFO] État boucle: iterations=5004, événements=831, points ajoutés=0, images rendues=1312, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 318.602167538s
+2026-11-15 07:55:58.413 [INFO] État boucle: iterations=5138, événements=831, points ajoutés=0, images rendues=1347, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 328.614901175s
+2026-11-15 07:56:08.419 [INFO] État boucle: iterations=5283, événements=831, points ajoutés=0, images rendues=1381, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 338.621522218s
+2026-11-15 07:56:18.423 [INFO] État boucle: iterations=5412, événements=831, points ajoutés=0, images rendues=1416, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 348.625633475s
+2026-11-15 07:56:28.428 [INFO] État boucle: iterations=5599, événements=831, points ajoutés=0, images rendues=1447, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 358.630754258s
+2026-11-15 07:56:38.437 [INFO] État boucle: iterations=5729, événements=831, points ajoutés=0, images rendues=1482, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 368.639398012s
+2026-11-15 07:56:48.449 [INFO] État boucle: iterations=5915, événements=831, points ajoutés=0, images rendues=1513, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 378.651743472s
+2026-11-15 07:56:58.465 [INFO] État boucle: iterations=6089, événements=831, points ajoutés=0, images rendues=1545, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 388.667512077s
+2026-11-15 07:57:08.475 [INFO] État boucle: iterations=6291, événements=831, points ajoutés=0, images rendues=1575, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 398.67713882s
+2026-11-15 07:57:18.476 [INFO] État boucle: iterations=6477, événements=831, points ajoutés=0, images rendues=1606, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 408.678654846s
+2026-11-15 07:57:28.490 [INFO] État boucle: iterations=6678, événements=831, points ajoutés=0, images rendues=1636, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 418.691973565s
+2026-11-15 07:57:38.497 [INFO] État boucle: iterations=6880, événements=831, points ajoutés=0, images rendues=1666, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 428.69962168s
+2026-11-15 07:57:48.507 [INFO] État boucle: iterations=7082, événements=831, points ajoutés=0, images rendues=1696, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 438.709587827s
+2026-11-15 07:57:58.523 [INFO] État boucle: iterations=7279, événements=831, points ajoutés=0, images rendues=1726, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 448.725026493s
+2026-11-15 07:58:08.523 [INFO] État boucle: iterations=7480, événements=831, points ajoutés=0, images rendues=1756, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 458.72534466s
+2026-11-15 07:58:18.524 [INFO] État boucle: iterations=7682, événements=831, points ajoutés=0, images rendues=1786, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 468.725930835s
+2026-11-15 07:58:28.527 [INFO] État boucle: iterations=7882, événements=831, points ajoutés=0, images rendues=1816, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 478.729059862s
+2026-11-15 07:58:38.540 [INFO] État boucle: iterations=8081, événements=831, points ajoutés=0, images rendues=1846, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 488.742269517s
+2026-11-15 07:58:48.546 [INFO] État boucle: iterations=8283, événements=831, points ajoutés=0, images rendues=1876, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 498.748422879s
+2026-11-15 07:58:58.550 [INFO] État boucle: iterations=8483, événements=831, points ajoutés=0, images rendues=1906, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 508.751774453s
+2026-11-15 07:59:08.778 [INFO] État boucle: iterations=8684, événements=831, points ajoutés=0, images rendues=1937, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 518.980354088s
+2026-11-15 07:59:18.789 [INFO] État boucle: iterations=8887, événements=831, points ajoutés=0, images rendues=1967, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 528.991399318s
+2026-11-15 07:59:28.803 [INFO] État boucle: iterations=9089, événements=831, points ajoutés=0, images rendues=1997, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 539.005351635s
+2026-11-15 07:59:39.025 [INFO] État boucle: iterations=9290, événements=831, points ajoutés=0, images rendues=2028, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 549.227103611s
+2026-11-15 07:59:49.037 [INFO] État boucle: iterations=9491, événements=831, points ajoutés=0, images rendues=2058, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 559.23934377s
+2026-11-15 07:59:59.252 [INFO] État boucle: iterations=9688, événements=831, points ajoutés=0, images rendues=2089, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 569.454084765s
+2026-11-15 08:00:09.314 [INFO] État boucle: iterations=9892, événements=831, points ajoutés=0, images rendues=2119, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 579.516273555s
+2026-11-15 08:00:19.316 [INFO] État boucle: iterations=10092, événements=831, points ajoutés=0, images rendues=2149, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 589.518755818s
+2026-11-15 08:00:29.322 [INFO] État boucle: iterations=10291, événements=831, points ajoutés=0, images rendues=2179, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 599.524662581s
+2026-11-15 08:00:39.339 [INFO] État boucle: iterations=10494, événements=831, points ajoutés=0, images rendues=2209, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 609.540917246s
+2026-11-15 08:00:49.350 [INFO] État boucle: iterations=10695, événements=831, points ajoutés=0, images rendues=2239, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 619.551943634s
+2026-11-15 08:00:59.366 [INFO] État boucle: iterations=10899, événements=831, points ajoutés=0, images rendues=2269, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 629.568152215s
+2026-11-15 08:01:09.377 [INFO] État boucle: iterations=11098, événements=831, points ajoutés=0, images rendues=2299, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 639.579711802s
+2026-11-15 08:01:19.393 [INFO] État boucle: iterations=11296, événements=831, points ajoutés=0, images rendues=2329, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 649.595675331s
+2026-11-15 08:01:29.405 [INFO] État boucle: iterations=11496, événements=831, points ajoutés=0, images rendues=2359, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 659.60767513s
+2026-11-15 08:01:39.415 [INFO] État boucle: iterations=11696, événements=831, points ajoutés=0, images rendues=2389, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 669.617434479s
+2026-11-15 08:01:49.425 [INFO] État boucle: iterations=11897, événements=831, points ajoutés=0, images rendues=2419, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 679.62682549s
+2026-11-15 08:01:59.440 [INFO] État boucle: iterations=12101, événements=831, points ajoutés=0, images rendues=2449, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 689.642294776s
+2026-11-15 08:02:09.447 [INFO] État boucle: iterations=12300, événements=831, points ajoutés=0, images rendues=2479, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 699.649417888s
+2026-11-15 08:02:19.460 [INFO] État boucle: iterations=12501, événements=831, points ajoutés=0, images rendues=2509, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 709.662424877s
+2026-11-15 08:02:29.468 [INFO] État boucle: iterations=12701, événements=831, points ajoutés=0, images rendues=2539, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 719.669953478s
+2026-11-15 08:02:39.475 [INFO] État boucle: iterations=12900, événements=831, points ajoutés=0, images rendues=2569, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 729.677108101s
+2026-11-15 08:02:49.483 [INFO] État boucle: iterations=13099, événements=831, points ajoutés=0, images rendues=2599, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 739.684991009s
+2026-11-15 08:02:59.488 [INFO] État boucle: iterations=13298, événements=831, points ajoutés=0, images rendues=2629, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 749.690728508s
+2026-11-15 08:03:09.497 [INFO] État boucle: iterations=13499, événements=831, points ajoutés=0, images rendues=2659, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 759.69902686s
+2026-11-15 08:03:19.513 [INFO] État boucle: iterations=13700, événements=831, points ajoutés=0, images rendues=2689, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 769.715077479s
+2026-11-15 08:03:29.516 [INFO] État boucle: iterations=13897, événements=831, points ajoutés=0, images rendues=2719, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 779.71803497s
+2026-11-15 08:03:39.523 [INFO] État boucle: iterations=14100, événements=831, points ajoutés=0, images rendues=2749, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 789.724993019s
+2026-11-15 08:03:49.539 [INFO] État boucle: iterations=14303, événements=831, points ajoutés=0, images rendues=2779, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 799.741233803s
+2026-11-15 08:03:59.550 [INFO] État boucle: iterations=14503, événements=831, points ajoutés=0, images rendues=2809, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 809.752583792s
+2026-11-15 08:04:09.757 [INFO] État boucle: iterations=14698, événements=831, points ajoutés=0, images rendues=2840, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 819.958848787s
+2026-11-15 08:04:19.773 [INFO] État boucle: iterations=14899, événements=831, points ajoutés=0, images rendues=2870, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 829.975167073s
+2026-11-15 08:04:30.003 [INFO] État boucle: iterations=15102, événements=831, points ajoutés=0, images rendues=2901, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 840.204889516s
+2026-11-15 08:04:40.031 [INFO] État boucle: iterations=15306, événements=831, points ajoutés=0, images rendues=2931, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 850.232808524s
+2026-11-15 08:04:50.263 [INFO] État boucle: iterations=15504, événements=831, points ajoutés=0, images rendues=2962, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 860.465163374s
+2026-11-15 08:04:50.377 [DEBUG] Événement fenêtre SDL: FocusGained
+2026-11-15 08:04:51.033 [DEBUG] Événement fenêtre SDL: Enter
+2026-11-15 08:04:52.263 [DEBUG] Événement fenêtre SDL: Leave
+2026-11-15 08:04:53.354 [DEBUG] Événement fenêtre SDL: FocusLost
+2026-11-15 08:05:00.265 [INFO] État boucle: iterations=15696, événements=890, points ajoutés=0, images rendues=2992, points trace=3, sauvegarde en attente=false, dernier événement utilisateur il y a 8.018466601s

@@ -1,7 +1,7 @@
 use sdl2::pixels::Color;
 use sdl2::rect::Point;
 use sdl2::render::WindowCanvas;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use chrono::Local;
@@ -58,6 +58,10 @@ impl Track
 		self.points.shrink_to_fit();
 		}
 
+	pub fn point_count(&self) -> usize {
+		self.points.len()
+	}
+
 	pub fn load(&mut self, path: &Path) -> io::Result<()>
 		{
 		let text = std::fs::read_to_string(path)?;
@@ -103,21 +107,22 @@ impl Track
 		self.points.push(TrackPoint { lon: pos.0, lat: pos.1, nx, ny });
 		}
     /// pos = (lon, lat)
-	pub fn add(&mut self, pos: (f64, f64)) 
+	pub fn add(&mut self, pos: (f64, f64)) -> bool
 		{
 		if !pos.0.is_finite()
 			|| !pos.1.is_finite()
 			|| !(-180.0..=180.0).contains(&pos.0)
 			|| !(-90.0..=90.0).contains(&pos.1)
 			{
-			return;
+			return false;
 			}
 		if let Some(last) = self.points.last() {
 			if distance_meters((last.lon, last.lat), pos) < MIN_TRACK_DISTANCE_METERS {
-				return;
+				return false;
 			}
 		}
 		self.push_point(pos);
+		true
 		}
 		
     pub fn show(&self, canvas: &mut WindowCanvas, map: &MBTilesRenderer, boat: Option<(f64, f64)>) 
@@ -161,7 +166,15 @@ impl Track
 
         let now = Local::now();
 
-        let mut w = BufWriter::new(File::create(&path)?);
+		let file_name = path
+			.file_name()
+			.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "nom de fichier GPX manquant"))?;
+		let temp_path = path.with_file_name(format!(
+			".{}.{}.tmp",
+			file_name.to_string_lossy(),
+			std::process::id()
+		));
+        let mut w = BufWriter::new(File::create(&temp_path)?);
         writeln!(w, r#"<?xml version="1.0" encoding="UTF-8"?>"#)?;
         writeln!(w, r#"<gpx version="1.1" creator="boat-tracker" xmlns="http://www.topografix.com/GPX/1/1">"#)?;
         writeln!(w, "  <trk>")?;
@@ -176,6 +189,12 @@ impl Track
         writeln!(w, "  </trk>")?;
         writeln!(w, "</gpx>")?;
         w.flush()?;
+		w.get_ref().sync_all()?;
+		drop(w);
+		if let Err(error) = fs::rename(&temp_path, path) {
+			let _ = fs::remove_file(&temp_path);
+			return Err(error);
+		}
 
         Ok(())
         }
@@ -368,17 +387,44 @@ mod tests {
         let under_20m = (-122.3, 47.5001);
         let over_20m = (-122.3, 47.5003);
 
-        track.add(start);
-        track.add(under_20m);
+        assert!(track.add(start));
+        assert!(!track.add(under_20m));
         assert_eq!(track.points.len(), 1);
 
-        track.add(over_20m);
+        assert!(track.add(over_20m));
         assert_eq!(track.points.len(), 2);
         assert_eq!(
             (track.points[1].lon, track.points[1].lat),
             over_20m
         );
     }
+
+	#[test]
+	fn saves_track_atomically_and_can_load_the_saved_file() {
+		let unique_id = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.unwrap()
+			.as_nanos();
+		let path = std::env::temp_dir().join(format!(
+			"desktop_plotter_track_save_{}_{}.gpx",
+			std::process::id(),
+			unique_id
+		));
+		let mut original = Track::new(Path::new("missing-track.gpx")).unwrap();
+		original.add((-122.3, 47.5));
+		original.add((-122.3, 47.5003));
+
+		original.save(&path).unwrap();
+		let loaded = Track::new(&path).unwrap();
+
+		assert_eq!(loaded.point_count(), 2);
+		assert!(!path.with_file_name(format!(
+			".{}.{}.tmp",
+			path.file_name().unwrap().to_string_lossy(),
+			std::process::id()
+		)).exists());
+		std::fs::remove_file(path).unwrap();
+	}
 
 	#[test]
 	fn simplifies_straight_track_but_preserves_turns() {
