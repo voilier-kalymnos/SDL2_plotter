@@ -31,6 +31,16 @@ ship type, day-shape marks, class B flat stern).
 
 ## Other
 
+- **Future WMM updates.** The magnetic model WMM2025 is valid to the end
+  of 2029. After that the app keeps using it and marks the source "WMM
+  expired". Decide how a new model (WMM2030) reaches the boat: a new
+  release with the coefficients built in, or a coefficient file that the
+  navigator can replace.
+- **Signal K COG path.** The default COG path
+  `navigation.courseOverGroundLastMinute` (`config.rs:396`) is not in the
+  Signal K 1.8.4 navigation schema. Find which path the servers send.
+  See `docs/rhumb-magnetic-research-2026-11-26.md`.
+
 - **Other config errors still stop the start.** A toml syntax error, or a
   bad value outside the input tables (window, appearance, rendering,
   streaming), fails `AppConfig::load_or_create`, and `main` exits.

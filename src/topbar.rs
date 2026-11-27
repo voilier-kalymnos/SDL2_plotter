@@ -117,6 +117,7 @@ impl MenuBar {
                     entry("North Up", AppAction::SetCourseUp(false)),
                     entry("Course Up", AppAction::SetCourseUp(true)),
                     entry("Heading Up", AppAction::SetHeadingUp),
+                    entry("Magnetic bearings", AppAction::ToggleMagnetic),
                 ],
             },
             Menu {

@@ -96,6 +96,10 @@ pub struct SignalKPaths {
     pub course_over_ground: String,
     pub speed_over_ground: String,
     pub heading: String,
+    /// Radians, east positive.
+    pub magnetic_variation: String,
+    /// ISO 8601 UTC date and time from the GPS, for the magnetic model.
+    pub datetime: String,
     pub ais_position: String,
     pub ais_name: String,
     pub ais_course_over_ground: String,
@@ -252,6 +256,8 @@ impl AppConfig {
                     &self.signalk.paths.course_over_ground,
                     &self.signalk.paths.speed_over_ground,
                     &self.signalk.paths.heading,
+                    &self.signalk.paths.magnetic_variation,
+                    &self.signalk.paths.datetime,
                     &self.signalk.paths.ais_position,
                     &self.signalk.paths.ais_name,
                     &self.signalk.paths.ais_course_over_ground,
@@ -396,6 +402,8 @@ impl Default for SignalKPaths {
             course_over_ground: "navigation.courseOverGroundLastMinute".into(),
             speed_over_ground: "navigation.speedOverGroundLastMinute".into(),
             heading: "navigation.headingTrue".into(),
+            magnetic_variation: "navigation.magneticVariation".into(),
+            datetime: "navigation.datetime".into(),
             ais_position: "navigation.position".into(),
             ais_name: "name".into(),
             ais_course_over_ground: "navigation.courseOverGroundTrue".into(),
@@ -590,6 +598,17 @@ address = \"0.0.0.0:10110\"
         assert!(config.input_error().unwrap().contains("signalk.url"));
         config.input.source = InputSource::Nmea0183;
         assert_eq!(config.input_error(), None);
+    }
+
+    #[test]
+    fn an_empty_variation_or_date_path_is_an_input_error() {
+        let mut config = AppConfig::default();
+        assert_eq!(config.input_error(), None);
+        config.signalk.paths.magnetic_variation = " ".into();
+        assert!(config.input_error().is_some());
+        config.signalk.paths.magnetic_variation = "navigation.magneticVariation".into();
+        config.signalk.paths.datetime = String::new();
+        assert!(config.input_error().is_some());
     }
 
     #[test]

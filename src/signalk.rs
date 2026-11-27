@@ -206,6 +206,8 @@ impl SignalKClient {
             self.paths.course_over_ground.as_str(),
             self.paths.speed_over_ground.as_str(),
             self.paths.heading.as_str(),
+            self.paths.magnetic_variation.as_str(),
+            self.paths.datetime.as_str(),
         ];
         let deltas: Vec<Delta> = self_paths
             .iter()
@@ -323,6 +325,25 @@ fn apply_delta(
                     if let Some(heading) = val.as_f64().filter(|h| h.is_finite()) {
                         data.heading = Some(heading);
                         data.heading_at = Some(now);
+                        summary.self_changed = true;
+                    }
+                } else if path == paths.magnetic_variation {
+                    // At most half a turn, as an NMEA variation.
+                    if let Some(variation) = val
+                        .as_f64()
+                        .map(f64::to_degrees)
+                        .filter(|v| v.is_finite() && v.abs() <= 180.0)
+                    {
+                        data.variation = Some(variation);
+                        data.variation_at = Some(now);
+                        summary.self_changed = true;
+                    }
+                } else if path == paths.datetime {
+                    if let Some(date) = val
+                        .as_str()
+                        .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+                    {
+                        data.gps_date = Some(date.with_timezone(&chrono::Utc).date_naive());
                         summary.self_changed = true;
                     }
                 }
@@ -633,6 +654,31 @@ mod tests {
         assert_eq!(boat.heading, Some(1.25));
         assert_eq!(boat.heading_at, Some(now));
         assert_eq!(boat.fixed_at, None, "a heading is not a fix");
+    }
+
+    #[test]
+    fn own_variation_is_read_from_radians_into_degrees_east_positive() {
+        let paths = SignalKPaths::default();
+        let mut boat = BoatState::default();
+        let now = Instant::now();
+        // -0.0541 rad is 3.1 degrees west.
+        let delta = json!({"context": "vessels.self", "updates": [{"values": [
+            {"path": "navigation.magneticVariation", "value": -0.054_105_2},
+            {"path": "navigation.datetime", "value": "2026-11-26T10:15:00.000Z"}
+        ]}]});
+        let summary = apply_delta(
+            &mut boat,
+            &mut FixGuard::default(),
+            &mut HashMap::new(),
+            &paths,
+            None,
+            &delta,
+            now,
+        );
+        assert!(summary.self_changed);
+        assert!((boat.variation.unwrap() - -3.1).abs() < 1e-4, "{boat:?}");
+        assert_eq!(boat.variation_at, Some(now));
+        assert_eq!(boat.gps_date, chrono::NaiveDate::from_ymd_opt(2026, 11, 26));
     }
 
     #[test]

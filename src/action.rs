@@ -46,6 +46,8 @@ pub enum AppAction {
     /// Centre the chart on the boat (its last position when the fix is
     /// stale) and follow it. Nothing before the first fix.
     CentreOnBoat,
+    /// Own-boat bearings in magnetic, or back to true.
+    ToggleMagnetic,
 }
 
 impl AppAction {
@@ -83,6 +85,7 @@ impl AppAction {
             Self::SetCourseUp(_) => "SetCourseUp",
             Self::SetHeadingUp => "SetHeadingUp",
             Self::CentreOnBoat => "CentreOnBoat",
+            Self::ToggleMagnetic => "ToggleMagnetic",
         }
     }
 }

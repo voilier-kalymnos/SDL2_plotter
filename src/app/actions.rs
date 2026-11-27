@@ -169,6 +169,7 @@ impl Session {
                 self.state.heading_up = true;
                 self.state.course_up = false;
             }
+            AppAction::ToggleMagnetic => self.state.magnetic = !self.state.magnetic,
         }
 
         self.sync_view();
@@ -301,6 +302,26 @@ mod tests {
         fx.finish();
     }
 
+    #[test]
+    fn magnetic_bearings_toggle_and_use_the_variation_in_use() {
+        let mut fx = session(&[2]);
+        let now = std::time::Instant::now();
+        let boat = crate::boat::BoatState {
+            variation: Some(-3.1),
+            variation_at: Some(now),
+            ..valid_boat()
+        };
+        fx.session.on_boat(boat, now);
+        assert!(!fx.session.state.magnetic, "off by default");
+        assert_eq!(fx.session.bearing_variation(), None, "true bearings");
+        fx.session.execute_action(AppAction::ToggleMagnetic);
+        assert!(fx.session.state.magnetic);
+        assert_eq!(fx.session.bearing_variation(), Some(-3.1));
+        fx.session.execute_action(AppAction::ToggleMagnetic);
+        assert_eq!(fx.session.bearing_variation(), None);
+        fx.finish();
+    }
+
     fn valid_boat() -> crate::boat::BoatState {
         crate::boat::BoatState {
             longitude: 0.0,
@@ -311,6 +332,7 @@ mod tests {
             heading: None,
             fixed_at: Some(std::time::Instant::now()),
             heading_at: None,
+            ..crate::boat::BoatState::default()
         }
     }
 

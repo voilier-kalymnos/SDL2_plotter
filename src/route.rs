@@ -147,7 +147,7 @@ impl Route {
         self.distance.clear();
 
         for w in self.track.windows(2) {
-            self.distance.push(gps::distance_nm(w[0], w[1]));
+            self.distance.push(gps::leg_nm(w[0], w[1]).0);
         }
 
         self.longueur = self.distance.iter().sum();
@@ -160,11 +160,12 @@ impl Route {
         }
     }
 
-    /// Distance and bearing from the boat to the active waypoint, plus the
-    /// distance to the end of the route. `None` when the route is empty.
+    /// Rhumb line distance and true bearing from the boat to the active
+    /// waypoint, plus the distance to the end of the route. `None` when the
+    /// route is empty.
     pub fn calc_route_mn_from_boat(&self, id: usize, boat: (f64, f64)) -> Option<(f64, f64, f64)> {
         let id = self.active_waypoint(id)?;
-        let (dist_wp, bearing_wp) = gps::distance_bearing_nm(boat, self.track[id]);
+        let (dist_wp, bearing_wp) = gps::leg_nm(boat, self.track[id]);
         let dist_total = dist_wp + self.restante[id];
         Some((dist_wp, bearing_wp, dist_total))
     }
@@ -182,7 +183,11 @@ impl Route {
     pub fn midpoints(&self) -> Vec<(f64, f64)> {
         self.track
             .windows(2)
-            .map(|w| ((w[0].0 + w[1].0) / 2.0, (w[0].1 + w[1].1) / 2.0))
+            // Halfway along the rhumb line the leg is drawn as.
+            .map(|w| {
+                gps::rhumb_point(w[0], w[1], 0.5)
+                    .unwrap_or(((w[0].0 + w[1].0) / 2.0, (w[0].1 + w[1].1) / 2.0))
+            })
             .collect()
     }
     /*
@@ -276,6 +281,27 @@ mod tests {
         assert!((to_waypoint - 60.0).abs() < 0.1, "{to_waypoint}");
         assert!(bearing.abs() < 1e-6, "{bearing}");
         assert!((to_end - 120.0).abs() < 0.2, "{to_end}");
+    }
+
+    #[test]
+    fn route_legs_are_rhumb_lines_so_a_leg_along_a_parallel_holds_due_east() {
+        // 10 degrees along 60 N: the rhumb line is 10 * 60.0405 * cos 60 =
+        // 300.20 NM at 090. The great circle is shorter (299.97 NM) and
+        // starts at about 086, which a helmsman cannot hold.
+        let route = Route::from_points(vec![(0.0, 60.0), (10.0, 60.0)]);
+        assert_eq!(route.show_route_len(), "route : 300.2 Mn");
+        let (to_waypoint, bearing, _) = route.calc_route_mn_from_boat(1, (0.0, 60.0)).unwrap();
+        assert!((to_waypoint - 300.20).abs() < 0.01, "{to_waypoint}");
+        assert!((bearing - 90.0).abs() < 1e-9, "{bearing}");
+    }
+
+    #[test]
+    fn the_handle_of_a_leg_across_the_antimeridian_sits_on_the_leg() {
+        // A plain average of 179.5 and -179.5 is 0, the far side of the world.
+        let route = Route::from_points(vec![(179.5, 10.0), (-179.5, 10.0)]);
+        let handle = route.midpoints()[0];
+        assert!((handle.0.abs() - 180.0).abs() < 1e-9, "{handle:?}");
+        assert!((handle.1 - 10.0).abs() < 1e-9, "{handle:?}");
     }
 
     #[test]

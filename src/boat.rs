@@ -10,6 +10,8 @@ const MINIMUM_SPEED: f64 = 1.0;
 pub const FIX_TIMEOUT: Duration = Duration::from_secs(10);
 /// No heading for this long: the heading is lost.
 pub const HEADING_TIMEOUT: Duration = Duration::from_secs(10);
+/// No variation for this long: the magnetic model gives it.
+pub const VARIATION_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug)]
 pub struct BoatState {
@@ -25,6 +27,16 @@ pub struct BoatState {
     pub fixed_at: Option<Instant>,
     /// When the source last received a heading.
     pub heading_at: Option<Instant>,
+    /// A heading in radians from a magnetic compass (HDG), with its
+    /// deviation applied. The session adds the variation to make `heading`.
+    pub magnetic_heading: Option<f64>,
+    /// The magnetic variation in degrees, east positive, when a source
+    /// sends one.
+    pub variation: Option<f64>,
+    /// When the source last received a variation.
+    pub variation_at: Option<Instant>,
+    /// The UTC date that the GPS gives, for the magnetic model.
+    pub gps_date: Option<chrono::NaiveDate>,
 }
 
 impl BoatState {
@@ -38,6 +50,10 @@ impl BoatState {
             heading: None,
             fixed_at: None,
             heading_at: None,
+            magnetic_heading: None,
+            variation: None,
+            variation_at: None,
+            gps_date: None,
         }
     }
 
@@ -54,15 +70,15 @@ impl BoatState {
             // The hull points along the heading, else the course while
             // moving; it keeps that direction when the fix is lost.
             bow: self.heading.or(moving.then_some(self.course_over_ground)),
-            course: (fix && self.speed_over_ground > MINIMUM_SPEED)
-                .then_some(self.course_over_ground),
+            course: self.course(),
             heading: self.heading.filter(|_| fix),
             fix,
         })
     }
 
     /// This state as it is at `now`: the fix is lost when no position came
-    /// for `FIX_TIMEOUT`, the heading when none came for `HEADING_TIMEOUT`.
+    /// for `FIX_TIMEOUT`, the heading when none came for `HEADING_TIMEOUT`,
+    /// the variation when none came for `VARIATION_TIMEOUT`.
     /// The last position stays, for the grey marker.
     pub fn expired(self, now: Instant) -> BoatState {
         let fresh = |at: Option<Instant>, timeout: Duration| {
@@ -73,8 +89,21 @@ impl BoatState {
             heading: self
                 .heading
                 .filter(|_| fresh(self.heading_at, HEADING_TIMEOUT)),
+            magnetic_heading: self
+                .magnetic_heading
+                .filter(|_| fresh(self.heading_at, HEADING_TIMEOUT)),
+            variation: self
+                .variation
+                .filter(|_| fresh(self.variation_at, VARIATION_TIMEOUT)),
             ..self
         }
+    }
+
+    /// The course over ground in radians, when it means something: a valid
+    /// fix and more than `MINIMUM_SPEED`.
+    pub fn course(&self) -> Option<f64> {
+        (self.position_valid && self.speed_over_ground > MINIMUM_SPEED)
+            .then_some(self.course_over_ground)
     }
 
     pub fn position(self) -> (f64, f64) {
@@ -184,7 +213,25 @@ mod tests {
             heading: Some(0.5),
             fixed_at: Some(now),
             heading_at: Some(now),
+            ..BoatState::default()
         }
+    }
+
+    #[test]
+    fn a_live_variation_expires_after_ten_seconds_like_the_fix() {
+        let now = Instant::now();
+        let boat = BoatState {
+            variation: Some(-3.1),
+            variation_at: Some(now),
+            magnetic_heading: Some(1.0),
+            ..fixed(now)
+        };
+        let soon = boat.expired(now + Duration::from_secs(9));
+        assert_eq!(soon.variation, Some(-3.1));
+        assert_eq!(soon.magnetic_heading, Some(1.0));
+        let late = boat.expired(now + Duration::from_secs(10));
+        assert_eq!(late.variation, None);
+        assert_eq!(late.magnetic_heading, None, "it goes with the heading");
     }
 
     #[test]

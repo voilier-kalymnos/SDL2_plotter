@@ -120,13 +120,14 @@ impl AisTarget {
 /// The rows of a target's details window, label and value, in reading
 /// order. A value the target has not sent is left out; the MMSI, class,
 /// and time since the last report always show. `own` is the own boat's
-/// position, for range and bearing.
+/// position, for range and bearing; the bearing is magnetic with a
+/// `variation`. The target's own course and heading are always true.
 pub fn details(
     target: &AisTarget,
     own: Option<(f64, f64)>,
+    variation: Option<f64>,
     now: Instant,
 ) -> Vec<(&'static str, String)> {
-    let degrees = |radians: f64| (radians.to_degrees().rem_euclid(360.0).round() as u32) % 360;
     let size = match (target.length_m, target.beam_m) {
         (Some(length), Some(beam)) => Some(format!("{length} × {beam} m")),
         (Some(length), None) => Some(format!("{length} m long")),
@@ -135,8 +136,8 @@ pub fn details(
     let range = own.zip(target.position).map(|(own, at)| {
         let (distance, bearing) = crate::gps::distance_bearing_nm(own, at);
         format!(
-            "{distance:.2} NM, bearing {:03}°",
-            (bearing.round() as u32) % 360
+            "{distance:.2} NM, bearing {}",
+            crate::magnetic::bearing_text(bearing, variation)
         )
     });
     let rows: [(&'static str, Option<String>); 15] = [
@@ -170,13 +171,13 @@ pub fn details(
             "Course",
             target
                 .course_over_ground
-                .map(|course| format!("{:03}°", degrees(course))),
+                .map(|course| crate::magnetic::bearing_text(course.to_degrees(), None)),
         ),
         (
             "Heading",
             target
                 .heading
-                .map(|heading| format!("{:03}°", degrees(heading))),
+                .map(|heading| crate::magnetic::bearing_text(heading.to_degrees(), None)),
         ),
         ("Size", size),
         ("Draught", target.draught_m.map(|d| format!("{d:.1} m"))),
@@ -385,7 +386,7 @@ mod tests {
         let now = Instant::now();
         // One nautical mile due south of the target: one minute of latitude.
         let own = (0.5461, 51.4950 - 1.0 / 60.0);
-        let rows = details(&sea_spirit(now), Some(own), now);
+        let rows = details(&sea_spirit(now), Some(own), None, now);
         let expected = [
             ("Name", "SEA SPIRIT"),
             ("MMSI", "232001001"),
@@ -395,16 +396,28 @@ mod tests {
             ("Status", "Under way using engine"),
             ("Position", "51° 29.700' N  000° 32.766' E"),
             ("Speed", "12.3 kn"),
-            ("Course", "090°"),
-            ("Heading", "091°"),
+            ("Course", "090°T"),
+            ("Heading", "091°T"),
             ("Size", "70 × 10 m"),
             ("Draught", "4.5 m"),
             ("Destination", "LONDON"),
-            ("Range", "1.00 NM, bearing 000°"),
+            ("Range", "1.00 NM, bearing 000°T"),
             ("Last report", "5 s ago"),
         ];
         let rows: Vec<(&str, &str)> = rows.iter().map(|(k, v)| (*k, v.as_str())).collect();
         assert_eq!(rows, expected);
+    }
+
+    #[test]
+    fn with_magnetic_bearings_the_bearing_to_the_target_is_magnetic_and_its_course_stays_true() {
+        let now = Instant::now();
+        let own = (0.5461, 51.4950 - 1.0 / 60.0);
+        // Variation 2 degrees west: true 000 is magnetic 002.
+        let rows = details(&sea_spirit(now), Some(own), Some(-2.0), now);
+        let value = |label| rows.iter().find(|(k, _)| *k == label).unwrap().1.clone();
+        assert_eq!(value("Range"), "1.00 NM, bearing 002°M");
+        assert_eq!(value("Course"), "090°T");
+        assert_eq!(value("Heading"), "091°T");
     }
 
     #[test]
@@ -414,7 +427,7 @@ mod tests {
         t.position = Some((-4.5, -33.25));
         t.class_b = true;
         t.last_update = now - Duration::from_secs(125);
-        let rows = details(&t, None, now);
+        let rows = details(&t, None, None, now);
         let rows: Vec<(&str, &str)> = rows.iter().map(|(k, v)| (*k, v.as_str())).collect();
         assert_eq!(
             rows,

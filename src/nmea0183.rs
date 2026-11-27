@@ -76,9 +76,6 @@ pub struct Update {
 /// The boat as the sentences so far describe it.
 pub struct Decoder {
     boat: BoatState,
-    /// The magnetic variation from the last RMC that had one, in degrees,
-    /// east positive. HDG uses it when it has none of its own.
-    variation: Option<f64>,
     /// When the last HDT came. HDG is ignored while it is fresh.
     hdt_at: Option<Instant>,
     /// When set, position sentences (RMC, GGA, GLL, VTG) from other
@@ -99,7 +96,6 @@ impl Decoder {
     pub fn new() -> Self {
         Self {
             boat: BoatState::default(),
-            variation: None,
             hdt_at: None,
             talker: None,
             rmc_at: None,
@@ -156,24 +152,39 @@ impl Decoder {
                 let update = self.heading(field(&fields, 1).and_then(degrees), now);
                 if update.boat_changed {
                     self.hdt_at = Some(now);
+                    self.boat.magnetic_heading = None;
                 }
                 update
             }
             Some("VDM") => self.ais(&fields),
-            Some("HDG") if self.hdt_is_fresh(now) => Update::default(),
             Some("HDG") => {
-                let variation = offset(field(&fields, 4), field(&fields, 5)).or(self.variation);
+                // The variation is kept even when HDT gives the heading.
+                if let Some(variation) = offset(field(&fields, 4), field(&fields, 5)) {
+                    self.set_variation(variation, now);
+                }
+                if self.hdt_is_fresh(now) {
+                    return Update::default();
+                }
                 // Deviation is optional; when it is given it must be valid.
                 let deviation = match field(&fields, 2) {
                     None => Some(0.0),
                     deviation => offset(deviation, field(&fields, 3)),
                 };
-                let heading = field(&fields, 1)
+                let Some(heading) = field(&fields, 1)
                     .and_then(degrees)
                     .zip(deviation)
-                    .zip(variation)
-                    .map(|((magnetic, deviation), variation)| magnetic + deviation + variation);
-                self.heading(heading, now)
+                    .map(|(magnetic, deviation)| (magnetic + deviation).rem_euclid(360.0))
+                else {
+                    return Update::default();
+                };
+                // The session adds the variation (live, else the model).
+                self.boat.magnetic_heading = Some(heading.to_radians());
+                self.boat.heading = None;
+                self.boat.heading_at = Some(now);
+                Update {
+                    boat_changed: true,
+                    ..Update::default()
+                }
             }
             _ => Update::default(),
         }
@@ -182,7 +193,10 @@ impl Decoder {
     fn rmc(&mut self, fields: &[&str], now: Instant) -> Update {
         self.rmc_at = Some(now);
         if let Some(variation) = offset(field(fields, 10), field(fields, 11)) {
-            self.variation = Some(variation);
+            self.set_variation(variation, now);
+        }
+        if let Some(date) = field(fields, 9).and_then(nmea_date) {
+            self.boat.gps_date = Some(date);
         }
         let valid = field(fields, 2) == Some("A") && mode_ok(field(fields, 12));
         let update = self.position(valid, fields, 3, now);
@@ -190,6 +204,11 @@ impl Decoder {
             self.motion(field(fields, 7), field(fields, 8));
         }
         update
+    }
+
+    fn set_variation(&mut self, degrees: f64, now: Instant) {
+        self.boat.variation = Some(degrees);
+        self.boat.variation_at = Some(now);
     }
 
     /// GGA, used while no RMC comes: quality 0 is no fix, 6 is dead
@@ -429,6 +448,18 @@ fn signed(
 /// N (not valid) and E (estimated, dead reckoning). No field: allowed.
 fn mode_ok(mode: Option<&str>) -> bool {
     !matches!(mode, Some("N" | "E"))
+}
+
+/// An RMC date, `ddmmyy`. Two-digit years from 80 are 1980 to 1999, the
+/// rest 2000 to 2079.
+fn nmea_date(text: &str) -> Option<chrono::NaiveDate> {
+    if text.len() != 6 || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let part = |range: std::ops::Range<usize>| text[range].parse::<u32>().ok();
+    let (day, month, year) = (part(0..2)?, part(2..4)?, part(4..6)?);
+    let year = if year >= 80 { 1900 + year } else { 2000 + year };
+    chrono::NaiveDate::from_ymd_opt(year as i32, month, day)
 }
 
 /// A magnetic variation or deviation in degrees, east positive, at most
@@ -695,6 +726,11 @@ mod tests {
         assert_eq!(b.fixed_at, None, "a heading is not a fix");
     }
 
+    /// The magnetic heading in degrees, deviation applied.
+    fn magnetic(d: &Decoder) -> f64 {
+        d.boat().magnetic_heading.unwrap().to_degrees()
+    }
+
     #[test]
     fn hdt_wins_over_hdg_while_it_is_fresh() {
         let mut d = Decoder::new();
@@ -706,66 +742,84 @@ mod tests {
         );
         assert_eq!(u, Update::default());
         assert!((d.boat().heading.unwrap() - 10.0_f64.to_radians()).abs() < 1e-9);
-        d.apply(
-            &sentence("HCHDG,100.0,,,0.0,E"),
-            now + crate::boat::HEADING_TIMEOUT,
-        );
+        assert_eq!(d.boat().magnetic_heading, None);
+        let later = now + crate::boat::HEADING_TIMEOUT;
+        d.apply(&sentence("HCHDG,100.0,,,0.0,E"), later);
         assert!(
-            (d.boat().heading.unwrap() - 100.0_f64.to_radians()).abs() < 1e-9,
+            (magnetic(&d) - 100.0).abs() < 1e-9,
             "HDG once HDT has stopped"
         );
+        assert_eq!(d.boat().heading, None, "the old HDT heading is gone");
+        assert_eq!(d.boat().heading_at, Some(later));
+        d.apply(&sentence("HEHDT,20.0,T"), later);
+        assert_eq!(d.boat().magnetic_heading, None, "and back to HDT");
+    }
+
+    #[test]
+    fn hdg_variation_is_kept_while_hdt_gives_the_heading() {
+        let mut d = Decoder::new();
+        let now = Instant::now();
+        d.apply(&sentence("HEHDT,10.0,T"), now);
+        d.apply(&sentence("HCHDG,100.0,,,4.0,E"), now);
+        assert_eq!(d.boat().variation, Some(4.0));
+        assert!((d.boat().heading.unwrap() - 10.0_f64.to_radians()).abs() < 1e-9);
     }
 
     #[test]
     fn hdg_applies_its_deviation() {
         let mut d = Decoder::new();
         d.apply(&sentence("HCHDG,100.0,2.0,E,5.0,W"), Instant::now());
-        assert!((d.boat().heading.unwrap() - 97.0_f64.to_radians()).abs() < 1e-9);
+        assert!((magnetic(&d) - 102.0).abs() < 1e-9);
         d.apply(&sentence("HCHDG,100.0,2.0,W,5.0,W"), Instant::now());
-        assert!((d.boat().heading.unwrap() - 93.0_f64.to_radians()).abs() < 1e-9);
+        assert!((magnetic(&d) - 98.0).abs() < 1e-9);
     }
 
     #[test]
     fn a_variation_or_deviation_beyond_180_degrees_is_ignored() {
         let mut d = Decoder::new();
-        let u = d.apply(&sentence("HCHDG,100.0,,,200.0,W"), Instant::now());
-        assert_eq!(u, Update::default());
+        d.apply(&sentence("HCHDG,100.0,,,200.0,W"), Instant::now());
+        assert_eq!(d.boat().variation, None);
         let u = d.apply(&sentence("HCHDG,100.0,190.0,E,5.0,W"), Instant::now());
         assert_eq!(u, Update::default());
+        let mut d = Decoder::new();
         d.apply(
             &sentence("GPRMC,123519,A,4807.038,N,01131.000,E,5.0,90.0,230394,200.0,W"),
             Instant::now(),
         );
-        let u = d.apply(&sentence("HCHDG,100.0,,,,"), Instant::now());
-        assert_eq!(u, Update::default(), "the RMC variation was not kept");
+        assert_eq!(d.boat().variation, None, "the RMC variation was not kept");
     }
 
     #[test]
-    fn hdg_uses_its_own_variation() {
+    fn hdg_publishes_its_own_variation_with_its_time() {
         let mut d = Decoder::new();
-        d.apply(&sentence("HCHDG,100.0,,,5.0,W"), Instant::now());
-        assert!((d.boat().heading.unwrap() - 95.0_f64.to_radians()).abs() < 1e-9);
-        d.apply(&sentence("HCHDG,358.0,,,5.0,E"), Instant::now());
-        assert!(
-            (d.boat().heading.unwrap() - 3.0_f64.to_radians()).abs() < 1e-9,
-            "wraps past north"
+        let now = Instant::now();
+        d.apply(&sentence("HCHDG,100.0,,,5.0,W"), now);
+        assert_eq!(d.boat().variation, Some(-5.0));
+        assert_eq!(d.boat().variation_at, Some(now));
+        assert!((magnetic(&d) - 100.0).abs() < 1e-9);
+        assert_eq!(d.boat().heading, None, "the session adds the variation");
+    }
+
+    #[test]
+    fn rmc_publishes_its_variation_and_date() {
+        // GPSD_RMC has 003.1,W and the date 23 March 1994.
+        let now = Instant::now();
+        let d = fixed_decoder(now);
+        assert_eq!(d.boat().variation, Some(-3.1));
+        assert_eq!(d.boat().variation_at, Some(now));
+        assert_eq!(
+            d.boat().gps_date,
+            chrono::NaiveDate::from_ymd_opt(1994, 3, 23)
         );
     }
 
     #[test]
-    fn hdg_uses_the_rmc_variation_when_it_has_none() {
-        // GPSD_RMC has 003.1,W.
-        let mut d = fixed_decoder(Instant::now());
-        d.apply(&sentence("HCHDG,100.0,,,,"), Instant::now());
-        assert!((d.boat().heading.unwrap() - 96.9_f64.to_radians()).abs() < 1e-9);
-    }
-
-    #[test]
-    fn hdg_without_any_variation_gives_no_heading() {
+    fn hdg_without_any_variation_still_gives_a_magnetic_heading() {
         let mut d = Decoder::new();
         let u = d.apply(&sentence("HCHDG,100.0,,,,"), Instant::now());
-        assert_eq!(u, Update::default());
-        assert_eq!(d.boat().heading, None);
+        assert!(u.boat_changed);
+        assert!((magnetic(&d) - 100.0).abs() < 1e-9);
+        assert_eq!(d.boat().variation, None);
     }
 
     const GGA: &str = "GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,";

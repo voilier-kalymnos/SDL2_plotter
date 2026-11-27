@@ -32,6 +32,9 @@ pub struct State {
     /// Wins over `course_up`; the two are never both set by an action.
     #[serde(default)]
     pub heading_up: bool,
+    /// Own-boat bearings show magnetic (M) instead of true (T).
+    #[serde(default)]
+    pub magnetic: bool,
 }
 
 impl State {
@@ -87,6 +90,7 @@ impl State {
             display_ais: true,
             course_up: false,
             heading_up: false,
+            magnetic: false,
         }
     }
 

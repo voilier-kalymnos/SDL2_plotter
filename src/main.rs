@@ -19,6 +19,7 @@ mod feed;
 mod geo_data;
 mod gps;
 mod gpx;
+mod magnetic;
 mod mbtiles_renderer;
 mod mesure;
 mod nmea0183;
@@ -112,6 +113,10 @@ async fn run() -> anyhow::Result<()> {
         alarm_sound,
         app::Files::default(),
     )?;
+    let today = magnetic::decimal_year(chrono::Utc::now().date_naive());
+    if let Some(warning) = magnetic::start_warning(today) {
+        diagnostics::record("WARN", warning);
+    }
     diagnostics::record("INFO", "Application initialisée");
     plotter.main_loop(
         &mut sdl.event_pump,

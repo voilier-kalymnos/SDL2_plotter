@@ -45,7 +45,7 @@ impl Plotter<'_> {
         // coordinates; the plan projects, culls and styles it; the screen paints.
         let mut shapes = Vec::new();
         if self.session.mode == Mode::Measurement {
-            shapes.extend(self.session.mesure.shapes());
+            shapes.extend(self.session.mesure.shapes(self.session.bearing_variation()));
         }
         if self.session.state.display_route {
             let navigation = self
@@ -173,7 +173,12 @@ impl Plotter<'_> {
         if let Some(target) = self.session.selected_ais_target() {
             let boat = &self.session.boat;
             let own = boat.fixed_at.map(|_| boat.position());
-            let rows = crate::ais::details(target, own, std::time::Instant::now());
+            let rows = crate::ais::details(
+                target,
+                own,
+                self.session.bearing_variation(),
+                std::time::Instant::now(),
+            );
             let style = crate::ais::shapes(std::slice::from_ref(target))
                 .first()
                 .and_then(|shape| match shape {
@@ -234,16 +239,19 @@ impl Plotter<'_> {
         };
         let message_left = match navigation {
             Some((dist_wp, bearing_wp, dist_total)) => format!(
-                "From Boat to Next Waypoint :  {:.1} Mn   {:.0}° / DTD : {:.1} Mn",
-                dist_wp, bearing_wp, dist_total
+                "From Boat to Next Waypoint :  {:.1} Mn   {} / DTD : {:.1} Mn",
+                dist_wp,
+                crate::magnetic::bearing_text(bearing_wp, self.session.bearing_variation()),
+                dist_total
             ),
             None => self.session.route.show_route_len(),
         };
 
-        let mut message_right = match self.session.mode {
-            Mode::EditRoute => "Mode Edit Route".to_string(),
-            Mode::EditWaypoint => "Mode Edit Waypoint".to_string(),
-            Mode::Measurement => "Mode Measurement".to_string(),
+        let mut message_right = self.session.motion_text() + " / ";
+        message_right += match self.session.mode {
+            Mode::EditRoute => "Mode Edit Route",
+            Mode::EditWaypoint => "Mode Edit Waypoint",
+            Mode::Measurement => "Mode Measurement",
         };
 
         message_right += if self.session.state.follow {
@@ -258,6 +266,10 @@ impl Plotter<'_> {
         } else {
             " / North Up"
         };
+        if self.session.state.magnetic {
+            message_right += " / ";
+            message_right += &crate::magnetic::bar_text(self.session.variation());
+        }
         self.buttombar
             .show(&mut screen.canvas, &message_left, chart, &message_right);
     }

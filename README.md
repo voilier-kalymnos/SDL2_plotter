@@ -18,7 +18,8 @@ SDL2 Plotter can run in a desktop Linux environment, but the idea is to create a
 - Automatic vessel following
 - Persistent JSON routes and tracks, with explicit GPX export
 - Routes and waypoints
-- Distance and bearing measurements
+- Distance and bearing measurements, with rhumb lines for route legs
+- True or magnetic bearings, with variation from the GPS or the World Magnetic Model
 - AIS target display
 - Animated zoom
 - MJPEG chart streaming over the local network
@@ -105,6 +106,8 @@ position = "navigation.position"
 course_over_ground = "navigation.courseOverGroundLastMinute"
 speed_over_ground = "navigation.speedOverGroundLastMinute"
 heading = "navigation.headingTrue"
+magnetic_variation = "navigation.magneticVariation"
+datetime = "navigation.datetime"
 ais_position = "navigation.position"
 ais_name = "name"
 ais_course_over_ground = "navigation.courseOverGroundTrue"
@@ -124,7 +127,7 @@ address = "127.0.0.1:10110"  # host:port or IP:port; for UDP, for example "0.0.0
 talker = ""                  # position sentences from this talker only, for example "GN"; empty: every talker
 ```
 
-Used when `source = "nmea0183"`. To test with `go-gps-simulator`: run `gps-simulator -tcp` with `transport = "tcp"`, `address = "127.0.0.1:10110"`, or `gps-simulator -udp -host 127.0.0.1` with `transport = "udp"`, `address = "0.0.0.0:10110"`. The app reads RMC (position, speed, course), HDT and HDG (heading; HDG only with a magnetic variation). When no RMC comes for 5 s, it uses GGA or GLL for the position and VTG for speed and course. It also reads AIS targets from `!AIVDM` (message types 1, 2, 3, 5, 18, 19 and 24).
+Used when `source = "nmea0183"`. To test with `go-gps-simulator`: run `gps-simulator -tcp` with `transport = "tcp"`, `address = "127.0.0.1:10110"`, or `gps-simulator -udp -host 127.0.0.1` with `transport = "udp"`, `address = "0.0.0.0:10110"`. The app reads RMC (position, speed, course), HDT and HDG (heading). An HDG with no variation of its own is made true with the variation from RMC, else from the magnetic model. When no RMC comes for 5 s, it uses GGA or GLL for the position and VTG for speed and course. It also reads AIS targets from `!AIVDM` (message types 1, 2, 3, 5, 18, 19 and 24).
 
 ### Charts
 
@@ -192,6 +195,21 @@ checkpoint_interval_seconds = 15
 Routes and the current track are stored as versioned JSON in `default/route.json` and `default/track.json`. The track is checkpointed periodically. GPX exports for routes, tracks and waypoints are available from their respective menus and written to `export/`.
 
 On first launch after upgrading, an existing `default/route.gpx` or `default/track.gpx` is migrated to its corresponding JSON file. The original GPX file is left unchanged.
+
+### Bearings and magnetic variation
+
+Route legs, and the bearing from the boat to the next waypoint, are rhumb lines: a constant bearing that a helmsman can hold. The measure tool shows the great circle, and adds the rhumb line ("RL") when the two differ by more than 0.5 degrees or 0.1 %.
+
+The bottom bar shows `COG 057°T  HDG 095°T`. The COG shows only with a fix and above 1 m/s (about 2 kn); a missing value shows as `--`. Each bearing has a T (true) or M (magnetic) mark. "Orientation > Magnetic bearings" switches own-boat bearings to magnetic; it is saved in `state.json`. AIS course and heading stay true. While it is on, the bottom bar shows the variation in use and its source:
+
+- `GPS`: any live variation (from RMC, HDG or the Signal K `magnetic_variation` path), at most 10 s old.
+- `WMM`: the World Magnetic Model WMM2025, built into the app, at the boat position and the GPS date (the system date with no fix).
+- `WMM expired`: the same model after 2029. NOAA publishes a new model every five years.
+- `Var --`: near a magnetic pole, where the model is not reliable. Bearings stay true.
+
+Deviation is not applied: a magnetic bearing is not a compass bearing.
+
+Notice under 17 U.S.C. 403: the WMM2025 coefficients (`src/magnetic/WMM.COF`) are a work of the US Government (NOAA National Centers for Environmental Information) and are not subject to copyright protection in the United States.
 
 ### Collision alarm
 
